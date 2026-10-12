@@ -53,10 +53,11 @@ body shape and livery.
 
 ## Graphics quality
 
-**High** (desktop default): full resolution, shadows, glow, 2x MSAA. **Medium** (browser default):
-draws at 1280x720 and scales up, glow, no shadows. **Low**: 960x540, no glow, fewer props and
-particles. In the browser the game drops to Low by itself once if the first seconds of a race run
-under 24 fps and nobody chose a level.
+Menus and the HUD always draw at your screen's full resolution. **High** (desktop default): the 3D
+view at full resolution with 4x anti-aliasing, shadows and glow. **Medium** (browser default): the 3D
+view at up to 1080 lines with 2x anti-aliasing and glow, no shadows. **Low**: up to 720 lines, no
+anti-aliasing or glow, fewer props and particles. In the browser the game drops to Low by itself
+once if the first seconds of a race run under 24 fps and nobody chose a level.
 
 ## Files
 
@@ -68,12 +69,13 @@ under 24 fps and nobody chose a level.
 | `scripts/track.gd` | builds a track (road, terrain, river, scenery) and answers position queries |
 | `scripts/props.gd` | scenery, arches and landmarks made from primitives |
 | `scripts/car.gd` | driving physics, drift and boost, lap counting, AI driver |
-| `scripts/car_models.gd` | the eight team car models |
+| `scripts/car_models.gd` | the eight team car models (smooth lofted bodies, glass cabins, detailed wheels) |
 | `scripts/race.gd` | one race: grid, countdown, collisions, ranking, camera |
 | `scripts/hud.gd` | race overlay: place, laps, minimap, speedometer, aether meter |
 | `scripts/showcase.gd` | the turning car on the menu screens |
-| `scripts/mesh_kit.gd` | low-poly mesh builder (boxes, cylinders, spheres, rings) |
+| `scripts/mesh_kit.gd` | mesh builder (boxes, cylinders, spheres, rings, smooth lofted shells) |
 | `scripts/autotest.gd` | smoke test with screenshots |
-| `shaders/` | painted sky, aether glow |
+| `shaders/` | painted sky, aether glow, glossy car paint |
+| `tools/car_lineup.gd` | art check: all eight cars side by side (`-- --lineup`) |
 | `fonts/` | Orbitron and Exo 2 (SIL Open Font License) |
 | `tools/` | Godot install, smoke test, web export |

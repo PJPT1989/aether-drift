@@ -56,6 +56,7 @@ func _ready() -> void:
 
 func set_track(i: int) -> void:
 	var d: Dictionary = Tracks.LIST[i]
+	Game.set_paint_sky(d)
 	_sky.set_shader_parameter("top_color", d.sky_top)
 	_sky.set_shader_parameter("horizon_color", d.sky_horizon)
 	_sky.set_shader_parameter("ground_color", d.sky_ground)

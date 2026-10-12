@@ -26,14 +26,21 @@ Sister project: `PJPT1989/ashen-depths` (same tooling). The web build is publish
   rural outskirts, portal to Amonkhet's revived river, elevated track over Muraganda's jungle, back
   across Amonkhet's desert, finale in Ghirapur). Place names are kept; teams, characters, art and text
   are original. Never copy card art, card text or Wizards/EA assets.
-- Everything visual is generated from code: `MeshKit` primitives with vertex colours, two shared
-  materials (`Game.mat_solid`, `Game.mat_glow`), procedural road and ground textures, `shaders/sky.gdshader`.
+- Everything visual is generated from code: `MeshKit` primitives and lofted shells with vertex
+  colours, three shared materials (`Game.mat_solid`, `Game.mat_glow`, and `Game.mat_paint` for glossy
+  car paint and glass, which reflects the current track's sky via `Game.set_paint_sky`), procedural
+  road and ground textures, `shaders/sky.gdshader`.
+- Car bodies are stations `[z, half width, bottom, top, top width factor, squareness]` lofted by
+  `CarModels._shell`. Check cars with `xvfb-run -a godot --path . --rendering-driver opengl3 -- --lineup`
+  (screenshots in `/tmp/aether-cars`).
 - Track layouts are control points in `tracks.gd`, smoothed with Catmull-Rom and stretched by
   `Track.STRETCH`. Cars do not use the physics engine: they slide on the centre line samples
   (`Track.locate/lateral/road_y`), with walls at `Track.limit`.
 - Each camera carries its environment (`camera.environment`); do not add WorldEnvironment nodes.
-- Quality (`Game.quality`, L key, `user://settings.cfg`): HIGH full res + shadows + glow + MSAA,
-  MEDIUM 1280x720 viewport scaling + glow, LOW 960x540, no glow, fewer props and particles.
+- Quality (`Game.quality`, L key, `user://settings.cfg`): the UI always draws at native resolution
+  (canvas_items stretch); `Main._apply_quality` sets the 3D `scaling_3d_scale` and MSAA. HIGH full
+  res + 4x MSAA + shadows + glow, MEDIUM up to 1080 lines + 2x MSAA + glow, LOW up to 720 lines, no
+  MSAA or glow, fewer props and particles.
 
 ## Code conventions
 - GDScript with tabs, static types where the surrounding code has them, `##` doc comment at the top

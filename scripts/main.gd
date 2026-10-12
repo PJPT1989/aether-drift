@@ -31,10 +31,14 @@ func _ready() -> void:
 	ui.layer = 10
 	add_child(ui)
 	Game.quality_changed.connect(_apply_quality)
+	get_tree().root.size_changed.connect(_apply_quality)
 	_apply_quality()
 	var args := OS.get_cmdline_user_args()
 	if "--simtest" in args:
 		_simtest.call_deferred()
+		return
+	if "--lineup" in args:
+		add_child(load("res://tools/car_lineup.gd").new())
 		return
 	showcase = Showcase.new()
 	add_child(showcase)
@@ -49,19 +53,23 @@ func _ready() -> void:
 # --- quality --------------------------------------------------------------------------
 
 func _apply_quality() -> void:
+	# The menus and HUD always draw at the window's own resolution, so text stays crisp. The 3D
+	# view draws at full resolution on High, at up to 1080 lines on Medium and up to 720 on Low,
+	# with multisampling smoothing the edges on High and Medium.
 	var root := get_tree().root
+	root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
+	root.content_scale_size = Vector2i(1280, 720)
+	root.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	var lines := float(maxi(root.size.y, 1))
 	match Game.quality:
 		Game.HIGH:
-			root.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-			root.content_scale_size = Vector2i(1280, 720)
-			root.msaa_3d = Viewport.MSAA_DISABLED if Game.web else Viewport.MSAA_2X
+			root.scaling_3d_scale = 1.0
+			root.msaa_3d = Viewport.MSAA_4X
 		Game.MEDIUM:
-			root.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
-			root.content_scale_size = Vector2i(1280, 720)
-			root.msaa_3d = Viewport.MSAA_DISABLED
+			root.scaling_3d_scale = minf(1.0, 1080.0 / lines)
+			root.msaa_3d = Viewport.MSAA_2X
 		_:
-			root.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
-			root.content_scale_size = Vector2i(960, 540)
+			root.scaling_3d_scale = minf(1.0, 720.0 / lines)
 			root.msaa_3d = Viewport.MSAA_DISABLED
 	if race:
 		race.apply_quality()

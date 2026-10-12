@@ -1,13 +1,16 @@
 class_name MeshKit
 extends RefCounted
-## Builds low-poly meshes out of boxes, cylinders, cones, spheres and rings with vertex colours.
-## A mesh has up to two surfaces: "solid" (lit, Game.mat_solid) and "glow" (emissive aether,
-## Game.mat_glow). Every car, prop and landmark in the game is made with this.
+## Builds meshes out of boxes, cylinders, cones, spheres, rings and lofted shells with vertex
+## colours. A mesh has up to three surfaces: "solid" (lit, Game.mat_solid), "glow" (emissive
+## aether, Game.mat_glow) and "paint" (glossy car paint and glass, Game.mat_paint). Every car,
+## prop and landmark in the game is made with this.
 
-var _st: Array[SurfaceTool] = [SurfaceTool.new(), SurfaceTool.new()]
-var _used := [false, false]
+var _st: Array[SurfaceTool] = [SurfaceTool.new(), SurfaceTool.new(), SurfaceTool.new()]
+var _used := [false, false, false]
 ## Transform applied to everything added (set it to place a part).
 var xf := Transform3D.IDENTITY
+## While true, everything that does not glow goes on the glossy paint surface.
+var paint := false
 
 
 func _init() -> void:
@@ -30,7 +33,7 @@ func tri(a: Vector3, b: Vector3, c: Vector3, col: Color, glow := false, na := Ve
 		na = (xf.basis * na).normalized()
 		nb = (xf.basis * nb).normalized()
 		nc = (xf.basis * nc).normalized()
-	var i := 1 if glow else 0
+	var i := 1 if glow else (2 if paint else 0)
 	_used[i] = true
 	var s := _st[i]
 	s.set_color(col)
@@ -174,11 +177,82 @@ func rock(c: Vector3, r: Vector3, col: Color, seed: int) -> void:
 			quad(pts[Vector2i(j, k)], pts[Vector2i(j + 1, k)], pts[Vector2i(j + 1, k1)], pts[Vector2i(j, k1)], shade)
 
 
+## Smooth shell through rows of points: rows[i] is one cross-section, its points going round
+## the same way in every row. `col` is a Color or a Callable(t, a, centre, normal) -> Color
+## called per quad, with t along the rows and a around them (both 0..1). The ends are capped
+## when `caps` is set. Normals are averaged, so the shell shades smoothly.
+func loft(rows: Array, col: Variant, glow := false, closed := true, caps := true) -> void:
+	var nr := rows.size()
+	var nc: int = rows[0].size()
+	var ncol := nc if closed else nc - 1
+	var nrm: Array = []
+	for i in nr:
+		var row: PackedVector3Array = rows[i]
+		var mid := Vector3.ZERO
+		for p in row:
+			mid += p
+		mid /= nc
+		var ns := PackedVector3Array()
+		for j in nc:
+			var along: Vector3 = rows[mini(i + 1, nr - 1)][j] - rows[maxi(i - 1, 0)][j]
+			var jn := (j + 1) % nc if closed else mini(j + 1, nc - 1)
+			var jp := (j - 1 + nc) % nc if closed else maxi(j - 1, 0)
+			var around := row[jn] - row[jp]
+			var n := along.cross(around)
+			if n.length_squared() < 1e-10:
+				n = row[j] - mid
+			n = n.normalized()
+			if n.dot(row[j] - mid) < 0.0:
+				n = -n
+			ns.append(n)
+		nrm.append(ns)
+	for i in nr - 1:
+		for j in ncol:
+			var j1 := (j + 1) % nc
+			var p00: Vector3 = rows[i][j]
+			var p01: Vector3 = rows[i][j1]
+			var p10: Vector3 = rows[i + 1][j]
+			var p11: Vector3 = rows[i + 1][j1]
+			var n00: Vector3 = nrm[i][j]
+			var n01: Vector3 = nrm[i][j1]
+			var n10: Vector3 = nrm[i + 1][j]
+			var n11: Vector3 = nrm[i + 1][j1]
+			var navg := (n00 + n01 + n10 + n11).normalized()
+			var c: Color = col.call((i + 0.5) / (nr - 1), (j + 0.5) / ncol, (p00 + p01 + p10 + p11) * 0.25, navg) if col is Callable else col
+			if (p10 - p00).cross(p11 - p00).dot(navg) >= 0.0:
+				tri(p00, p10, p11, c, glow, n00, n10, n11)
+				tri(p00, p11, p01, c, glow, n00, n11, n01)
+			else:
+				tri(p00, p11, p10, c, glow, n00, n11, n10)
+				tri(p00, p01, p11, c, glow, n00, n01, n11)
+	if caps:
+		for e in [0, nr - 1]:
+			var row: PackedVector3Array = rows[e]
+			var mid := _centre(row)
+			var out: Vector3 = mid - _centre(rows[1] if e == 0 else rows[nr - 2])
+			var c: Color = col.call(0.0 if e == 0 else 1.0, 0.5, mid, out.normalized()) if col is Callable else col
+			for j in ncol:
+				var a := row[j]
+				var b := row[(j + 1) % nc]
+				if (a - mid).cross(b - mid).dot(out) >= 0.0:
+					tri(mid, a, b, c, glow)
+				else:
+					tri(mid, b, a, c, glow)
+
+
+static func _centre(row: PackedVector3Array) -> Vector3:
+	var m := Vector3.ZERO
+	for p in row:
+		m += p
+	return m / maxi(row.size(), 1)
+
+
 func commit(mesh: ArrayMesh = null) -> ArrayMesh:
 	if mesh == null:
 		mesh = ArrayMesh.new()
-	for i in 2:
+	var mats := [Game.mat_solid, Game.mat_glow, Game.mat_paint]
+	for i in 3:
 		if _used[i]:
 			_st[i].commit(mesh)
-			mesh.surface_set_material(mesh.get_surface_count() - 1, Game.mat_glow if i == 1 else Game.mat_solid)
+			mesh.surface_set_material(mesh.get_surface_count() - 1, mats[i])
 	return mesh

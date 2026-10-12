@@ -60,6 +60,7 @@ var font_body: FontVariation
 var font_bold: FontVariation
 var mat_solid: StandardMaterial3D
 var mat_glow: ShaderMaterial
+var mat_paint: ShaderMaterial
 var sounds := {}
 var _players: Array[AudioStreamPlayer] = []
 var _next_player := 0
@@ -87,6 +88,8 @@ func _ready() -> void:
 	mat_solid.metallic_specular = 0.35
 	mat_glow = ShaderMaterial.new()
 	mat_glow.shader = load("res://shaders/glow.gdshader")
+	mat_paint = ShaderMaterial.new()
+	mat_paint.shader = load("res://shaders/paint.gdshader")
 	_setup_input()
 	for i in 10:
 		var p := AudioStreamPlayer.new()
@@ -129,6 +132,13 @@ func _font(path: String, weight: int) -> FontVariation:
 	f.base_font = load(path)
 	f.variation_opentype = {"wght": weight}
 	return f
+
+
+## Points the car paint reflections at a sky (a track definition from Tracks.LIST).
+func set_paint_sky(d: Dictionary) -> void:
+	mat_paint.set_shader_parameter("sky_top", d.sky_top)
+	mat_paint.set_shader_parameter("sky_horizon", d.sky_horizon)
+	mat_paint.set_shader_parameter("sky_ground", d.sky_ground)
 
 
 func set_quality(q: int, save := true) -> void:
