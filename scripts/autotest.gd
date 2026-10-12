@@ -63,12 +63,14 @@ func _run() -> void:
 		# a view from the side, looking across the track at the pack
 		var r: Race = main.race
 		r.free_cam = true
+		main.hud.visible = false
 		var p: Car = r.player
 		var side := r.track.R[p.idx]
 		r.camera.look_at_from_position(p.position + side * 38.0 - p.forward() * 30.0 + Vector3(0, 14, 0), p.position + p.forward() * 20.0, Vector3.UP)
 		await _wait(4)
 		await _shot("t%d_side" % t)
 		r.free_cam = false
+		main.hud.visible = true
 		print("AUTOTEST track %d ok: place %d, speed %d km/h" % [t, main.race.player.place, int(main.race.player.speed * 3.6)])
 	# pause menu, then fast-forward to the results
 	main._pause()
