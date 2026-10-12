@@ -31,6 +31,24 @@ A gamepad works too (left stick, triggers, A/B/X/Y).
 Aether fills from drifting and from the glowing **aether orbs** lined up on the road. Grass, sand
 and run-off slow you down; walls and rails bounce you back.
 
+## World events
+
+The tracks fight back. Every 15-25 seconds something happens somewhere ahead of a random racer
+(you are picked more often than any one rival). A banner names it and says how far ahead it is, and
+an amber dot marks it on the minimap. Rivals are caught out too, and only some of them see a log in
+time to steer round it, so every race turns out differently.
+
+| Track | Events |
+| --- | --- |
+| Ghirapur Nightfall | **Thopter swarm**: buffeting and spins. **Aether pipe burst**: a slick with almost no grip that fills your aether meter |
+| The Inventors' Outskirts | **Runaway harvester**: a huge automaton walks across the road. **Crosswind**: gusts push every car sideways |
+| Banks of the Living River | **River surge**: water floods the road, top speed drops. **Scarab swarm**: beetles slow you and eat your aether |
+| Primordial Canopy | **Geyser eruption**: glowing vents go off and throw cars. **Falling branches**: logs land on the deck; hitting one stops you dead |
+| The Broken Sands | **Sandstorm**: thick haze, loose grip, gusts. **Drifting sand**: a dune covers half the road |
+| Heart of Ghirapur | **Fireworks misfire**: rockets land on the track and explode. **Aether lightning**: bolts hit random racers, spin them and empty their aether |
+
+A car caught by a blast, a bolt or a slick spins once round and loses most of its speed.
+
 ## The tracks (race order)
 
 | # | Track | Plane | Look |
@@ -71,6 +89,7 @@ once if the first seconds of a race run under 24 fps and nobody chose a level.
 | `scripts/car.gd` | driving physics, drift and boost, lap counting, AI driver |
 | `scripts/car_models.gd` | the eight team car models (smooth lofted bodies, glass cabins, detailed wheels) |
 | `scripts/race.gd` | one race: grid, countdown, collisions, ranking, camera |
+| `scripts/hazards.gd` | world events: what each one does, its visuals, and how the AI reacts |
 | `scripts/hud.gd` | race overlay: place, laps, minimap, speedometer, aether meter |
 | `scripts/showcase.gd` | the turning car on the menu screens |
 | `scripts/mesh_kit.gd` | mesh builder (boxes, cylinders, spheres, rings, smooth lofted shells) |

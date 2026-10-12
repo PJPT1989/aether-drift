@@ -71,6 +71,20 @@ func _run() -> void:
 		await _shot("t%d_side" % t)
 		r.free_cam = false
 		main.hud.visible = true
+		# each of the track's world events, set off on the road just ahead of the player
+		# (the race is frozen while the frames render, so the event is still ahead in the shot)
+		r.set_physics_process(false)
+		for kind: String in r.track.def.get("events", []):
+			r.hazards.clear()
+			r.hazards.trigger(kind, r.player, 140.0)
+			r.hazards._next = 999.0
+			for i in 60 * 2:
+				r.simulate(1.0 / 60.0)
+			await _wait(6)
+			await _shot("t%d_ev_%s" % [t, kind])
+			print("AUTOTEST event %s fired (%d active, banner %.1f s), spins so far %d" % [kind, r.hazards.events.size(), r.hazards.banner_t, r.hazards.spins])
+		r.hazards.clear()
+		r.set_physics_process(true)
 		print("AUTOTEST track %d ok: place %d, speed %d km/h" % [t, main.race.player.place, int(main.race.player.speed * 3.6)])
 	# pause menu, then fast-forward to the results
 	main._pause()

@@ -6,6 +6,7 @@ extends Control
 const CYAN := Color(0.4, 0.92, 1.0)
 const GOLD := Color(1.0, 0.78, 0.35)
 const PINK := Color(1.0, 0.4, 0.7)
+const AMBER := Color(1.0, 0.62, 0.15)
 const PANEL := Color(0.03, 0.03, 0.08, 0.55)
 
 var race: Race
@@ -18,7 +19,7 @@ var _hint_t := 9.0
 
 func setup(r: Race) -> void:
 	race = r
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var lo := Vector2(INF, INF)
 	var hi := Vector2(-INF, -INF)
@@ -82,6 +83,7 @@ func _draw() -> void:
 	if race.message_t > 0.0:
 		var a := clampf(race.message_t * 2.0, 0.0, 1.0)
 		_text(Vector2(0, mid.y - 120), race.message, 46, Color(CYAN, a), Game.font_title, HORIZONTAL_ALIGNMENT_CENTER, sz.x)
+	_draw_event(Vector2(mid.x, 64), p)
 	if p.wrong_way > 1.5:
 		_text(Vector2(0, mid.y - 60), "WRONG WAY", 44, Color(1, 0.3, 0.3, 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.01)), Game.font_title, HORIZONTAL_ALIGNMENT_CENTER, sz.x)
 		_text(Vector2(0, mid.y - 28), "turn round, or press R to reset", 18, Color.WHITE, null, HORIZONTAL_ALIGNMENT_CENTER, sz.x)
@@ -110,6 +112,11 @@ func _draw_map(at: Vector2) -> void:
 		if car == race.player:
 			continue
 		draw_circle(c + (Vector2(car.position.x, car.position.z) - _map_origin) * _map_scale, 4.0, car.team.glow)
+	var blink := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.012)
+	for m: Vector3 in race.hazards.markers():
+		var mp := c + (Vector2(m.x, m.z) - _map_origin) * _map_scale
+		draw_circle(mp, 9.0, Color(AMBER, 0.25 + 0.35 * blink))
+		draw_circle(mp, 4.0, AMBER)
 	var pp := race.player.position
 	draw_circle(c + (Vector2(pp.x, pp.z) - _map_origin) * _map_scale, 6.5, Color.WHITE)
 	draw_circle(c + (Vector2(pp.x, pp.z) - _map_origin) * _map_scale, 4.5, race.player.team.glow)
@@ -136,3 +143,20 @@ func _draw_speedo(c: Vector2, p: Car) -> void:
 	for i in range(1, 4):
 		draw_line(bar.position + Vector2(bar.size.x * i / 4.0, 0), bar.position + Vector2(bar.size.x * i / 4.0, bar.size.y), Color(0, 0, 0, 0.5), 2.0)
 	_text(bar.position + Vector2(0, -8), "AETHER" + ("  BOOST!" if p.boosting else ""), 15, PINK if p.boosting else CYAN, Game.font_title)
+
+
+## World event banner: the event's name and what it does when it starts, then a smaller
+## reminder with the distance while one waits on the road ahead.
+func _draw_event(at: Vector2, p: Car) -> void:
+	var h := race.hazards
+	var dist := h.distance_ahead(p)
+	if h.banner_t > 0.0:
+		var a := clampf(h.banner_t * 2.0, 0.0, 1.0)
+		var flash := 0.75 + 0.25 * sin(Time.get_ticks_msec() * 0.015)
+		draw_rect(Rect2(at.x - 300, at.y - 42, 600, 76), Color(0.12, 0.04, 0.0, 0.6 * a))
+		draw_rect(Rect2(at.x - 300, at.y - 42, 600, 4), Color(AMBER, a))
+		_text(Vector2(at.x - 300, at.y), "! " + h.banner + " !", 34, Color(AMBER, a * flash), Game.font_title, HORIZONTAL_ALIGNMENT_CENTER, 600)
+		var extra := ("   -   %d m ahead" % int(dist)) if dist >= 0.0 else ""
+		_text(Vector2(at.x - 300, at.y + 26), h.banner_hint + extra, 16, Color(1, 1, 1, a), null, HORIZONTAL_ALIGNMENT_CENTER, 600)
+	elif dist >= 0.0 and dist < 500.0:
+		_text(Vector2(at.x - 200, at.y - 18), "! hazard %d m ahead" % int(dist), 18, Color(AMBER, 0.9), Game.font_title, HORIZONTAL_ALIGNMENT_CENTER, 400)

@@ -48,3 +48,16 @@ importance of family." under the logo (`Game.TAGLINE`), in gold; the shop's game
 - World: detailed city buildings (shop fronts, set-back tiers, framed windows, balconies, domes and
   turrets), fuller trees and palms, fluted columns, rounded curbs and crash barriers, and more
   detailed arches and landmarks. Distant props and Low quality use lighter versions.
+
+## 4. World events (2026-10-12)
+> Lets do one more change, I want "world" in individual races to interact with the race itself. Each
+> race should have certain "events" that introduce complications and set backs to the racing cars,
+> thus making outcome more rng dependent.
+
+Built `scripts/hazards.gd`: every 15-25 s one of the track's two events fires 170-300 m ahead of a
+random racer (the player 40% of the time), with a HUD banner, distance and minimap marker. Twelve
+events, two per track (see README). Effects: grip and top-speed zones, aether gain or drain, sideways
+gusts, obstacles, blasts and lightning that spin a car once round. AI drivers notice obstacles only
+60% of the time per event (and always after hitting one), so results vary from race to race.
+Sim test: every car still finishes every track; about 5-8 events and 2-16 spins per race.
+Also fixed: the HUD's minimap, speedometer and aether meter never showed (the HUD had zero size).

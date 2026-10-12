@@ -36,6 +36,12 @@ Sister project: `PJPT1989/ashen-depths` (same tooling). The web build is publish
 - Track layouts are control points in `tracks.gd`, smoothed with Catmull-Rom and stretched by
   `Track.STRETCH`. Cars do not use the physics engine: they slide on the centre line samples
   (`Track.locate/lateral/road_y`), with walls at `Track.limit`.
+- World events (`scripts/hazards.gd`, `Hazards.KINDS`): each track lists two kinds in `Tracks.LIST`
+  "events". `Race.simulate` calls `hazards.update` once per step and `hazards.affect(car)` before each
+  `car.step`; events act through `Car.fx_grip/fx_top/fx_push`, `Car.spin_out()` and `hop_t`. The AI
+  sees obstacles through `think(..., dangers)` only when `Car.alert` (re-rolled per event, 60%).
+  The sim test prints events and spins per track. After adding a new `class_name` script, run
+  `godot --headless --path . --import` once so the class cache knows it.
 - Each camera carries its environment (`camera.environment`); do not add WorldEnvironment nodes.
 - Quality (`Game.quality`, L key, `user://settings.cfg`): the UI always draws at native resolution
   (canvas_items stretch); `Main._apply_quality` sets the 3D `scaling_3d_scale` and MSAA. HIGH full

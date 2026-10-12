@@ -7,6 +7,7 @@ extends RefCounted
 ##
 ## points: closed loop of control points (x, height, z) in metres, smoothed by track.gd.
 ## Landmarks: [kind, where along the lap (0..1), side (-1 left, 1 right), metres from the road, scale].
+## events: the two world-event kinds (Hazards.KINDS) that can strike during a race here.
 
 const LIST := [
 	{
@@ -28,7 +29,7 @@ const LIST := [
 		"props": [["city", 150, 22.0, 130.0], ["lamp_tall", 60, 11.0, 13.0], ["dome", 30, 60.0, 220.0], ["city", 90, 130.0, 320.0]],
 		"arch": "pipe", "arch_every": 160.0,
 		"landmarks": [["spire", 0.55, 1, 70.0, 1.0], ["spire", 0.12, -1, 140.0, 0.7], ["omen", 0.0, 0, 0.0, 1.0]],
-		"particles": "aether", "night": true, "flyers": "thopter",
+		"particles": "aether", "night": true, "flyers": "thopter", "events": ["thopter_swarm", "pipe_burst"],
 	},
 	{
 		"name": "The Inventors' Outskirts", "plane": "Avishkar", "leg": "Leg 2 - into the countryside",
@@ -48,7 +49,7 @@ const LIST := [
 		"props": [["curl_tree", 160, 14.0, 160.0], ["windmill", 18, 40.0, 220.0], ["dome", 40, 30.0, 250.0], ["curl_tree", 120, 160.0, 400.0]],
 		"arch": "pipe", "arch_every": 420.0,
 		"landmarks": [["pipeline", 0.3, 1, 90.0, 1.0], ["pipeline", 0.75, -1, 110.0, 1.0], ["spire", 0.5, 1, 420.0, 0.8], ["omen", 0.0, 0, 0.0, 1.0]],
-		"particles": "pollen", "night": false, "flyers": "thopter",
+		"particles": "pollen", "night": false, "flyers": "thopter", "events": ["harvester", "crosswind"],
 	},
 	{
 		"name": "Banks of the Living River", "plane": "Amonkhet", "leg": "Leg 3 - through the portal",
@@ -71,7 +72,7 @@ const LIST := [
 		"arch": "gate", "arch_every": 520.0,
 		"landmarks": [["pyramid", 0.2, 1, 420.0, 1.3], ["pyramid", 0.4, 1, 520.0, 0.9], ["statue", 0.08, -1, 40.0, 1.0],
 			["statue", 0.62, 1, 38.0, 1.0], ["stands", 0.03, -1, 22.0, 1.0], ["stands", 0.5, -1, 22.0, 1.0], ["omen", 0.0, 0, 0.0, 1.0]],
-		"particles": "pollen", "night": false, "flyers": "birds",
+		"particles": "pollen", "night": false, "flyers": "birds", "events": ["river_surge", "scarabs"],
 	},
 	{
 		"name": "Primordial Canopy", "plane": "Muraganda", "leg": "Leg 4 - the elevated track",
@@ -93,7 +94,7 @@ const LIST := [
 		"arch": "vine", "arch_every": 300.0,
 		"landmarks": [["volcano", 0.35, -1, 460.0, 1.0], ["dino", 0.15, 1, 90.0, 1.0], ["dino", 0.6, -1, 110.0, 1.2], ["dino", 0.8, 1, 140.0, 0.9],
 			["moonrocks", 0.5, 0, 0.0, 1.0], ["omen", 0.0, 0, 0.0, 1.0]],
-		"particles": "spores", "night": false, "flyers": "",
+		"particles": "spores", "night": false, "flyers": "", "events": ["geysers", "branches"],
 	},
 	{
 		"name": "The Broken Sands", "plane": "Amonkhet", "leg": "Leg 5 - the boiling desert",
@@ -113,7 +114,7 @@ const LIST := [
 		"props": [["column", 120, 6.0, 90.0], ["ruin_wall", 70, 8.0, 120.0], ["rock", 140, 10.0, 300.0], ["broken_statue", 18, 20.0, 120.0], ["obelisk", 16, 12.0, 80.0]],
 		"arch": "ruin_gate", "arch_every": 600.0,
 		"landmarks": [["mesa", 0.25, 1, 260.0, 1.2], ["mesa", 0.7, -1, 300.0, 1.0], ["tomb", 0.45, -1, 120.0, 1.0], ["pyramid", 0.85, 1, 520.0, 1.6], ["omen", 0.0, 0, 0.0, 1.0]],
-		"particles": "sand", "night": false, "flyers": "",
+		"particles": "sand", "night": false, "flyers": "", "events": ["sandstorm", "sand_drift"],
 	},
 	{
 		"name": "Heart of Ghirapur", "plane": "Avishkar", "leg": "Leg 6 - the finale",
@@ -136,6 +137,6 @@ const LIST := [
 		"arch": "pipe", "arch_every": 200.0,
 		"landmarks": [["trophy", 0.02, 1, 60.0, 1.0], ["stands", 0.03, -1, 20.0, 1.3], ["stands", 0.1, -1, 20.0, 1.3], ["stands", 0.06, 1, 22.0, 1.0],
 			["spire", 0.45, 1, 90.0, 1.2], ["spire", 0.75, -1, 120.0, 0.9]],
-		"particles": "fireworks", "night": true, "flyers": "thopter",
+		"particles": "fireworks", "night": true, "flyers": "thopter", "events": ["fireworks", "aether_lightning"],
 	},
 ]

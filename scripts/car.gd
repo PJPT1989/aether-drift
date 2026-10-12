@@ -62,6 +62,15 @@ var lane := 0.0
 var lane_target := 0.0
 var _think_t := 0.0
 var rubber := 1.0
+var alert := true             # sees obstacles from world events in time (re-rolled per event)
+
+# world events (Hazards): modifiers set before each step, and the spin-out state
+var fx_grip := 1.0
+var fx_top := 1.0
+var fx_push := Vector3.ZERO
+var spin_t := 0.0
+var hop_t := 0.0
+var _spin_rate := 0.0
 
 # visuals
 var body: Node3D
@@ -194,7 +203,18 @@ func top_speed() -> float:
 		top *= BOOST_TOP
 	if offroad:
 		top *= 0.55
-	return top
+	return top * fx_top
+
+
+## Knocked into a full spin by a world event: the car loses most of its speed, slides round
+## once and ends up facing the way it was going. `power` scales the speed lost.
+func spin_out(power := 1.0) -> void:
+	spin_t = 1.1
+	_spin_rate = TAU / spin_t * (1.0 if randf() < 0.5 else -1.0)
+	vel *= 1.0 - 0.5 * power
+	drifting = false
+	drift_time = 0.0
+	mini_boost = 0.0
 
 
 ## Advances the physics by dt. `racing` false holds the car still (countdown).
@@ -202,6 +222,15 @@ func step(dt: float, racing: bool, time_now: float) -> void:
 	if not racing:
 		throttle = 0.0
 		brake = 1.0
+	var spinning := spin_t > 0.0
+	if spinning:
+		spin_t -= dt
+		throttle = 0.0
+		brake = 0.0
+		steer = 0.0
+		drift_input = false
+		boost_input = false
+		yaw += _spin_rate * dt
 	# steering turns the car; the velocity only follows through tyre grip, so letting go of
 	# grip (drifting) makes the car slide
 	var vf0 := vel.dot(forward())
@@ -254,12 +283,18 @@ func step(dt: float, racing: bool, time_now: float) -> void:
 	var g: float = (DRIFT_GRIP if drifting else GRIP) * team.grip
 	if offroad:
 		g *= 0.7
+	g *= fx_grip
+	if spinning:
+		g = 0.6
 	vs *= exp(-g * dt)
 	if drifting:
 		# arcade drift: the slide feeds back into forward speed instead of scrubbing it all off
 		vf += absf(vs) * 1.4 * dt
-	vel = fwd * vf + rgt * vs
+	vel = fwd * vf + rgt * vs + fx_push * dt
 	speed = vf
+	fx_grip = 1.0
+	fx_top = 1.0
+	fx_push = Vector3.ZERO
 	position += vel * dt
 	# where are we on the track
 	idx = track.locate(position, idx)
@@ -310,8 +345,10 @@ func step(dt: float, racing: bool, time_now: float) -> void:
 	_update_visuals(dt)
 
 
-## AI driver: choose a lane, look ahead for corners and set the controls.
-func think(dt: float, others: Array) -> void:
+## AI driver: choose a lane, look ahead for corners and set the controls. `dangers` are
+## [position, radius, offset from the centre line] obstacles from world events; an alert driver
+## steers round them.
+func think(dt: float, others: Array, dangers: Array = []) -> void:
 	_think_t -= dt
 	if _think_t <= 0.0:
 		_think_t = randf_range(1.5, 3.5)
@@ -327,9 +364,23 @@ func think(dt: float, others: Array) -> void:
 			var side := d.dot(right())
 			if absf(side) < 2.6:
 				lane_target = clampf(lane + (-3.5 if side > 0.0 else 3.5), -0.7 * track.hw, 0.7 * track.hw)
-	lane = move_toward(lane, lane_target, dt * 2.5)
+	var first := INF
+	var avoid_brake := false
+	if alert:
+		# the nearest obstacle in our way: pass it on the wider side, braking if it is too late
+		for dg in dangers:
+			var d: Vector3 = dg[0] - position
+			var ahead := d.dot(fwd)
+			if ahead > 2.0 and ahead < 30.0 + maxf(speed, 0.0) * 1.7 and ahead < first:
+				var dlat: float = dg[2]
+				if absf(dlat - lane) < dg[1] + 3.5 or absf(dlat - track.lateral(position, idx)) < dg[1] + 3.5:
+					first = ahead
+					lane_target = (-1.0 if dlat > 0.0 else 1.0) * track.hw * 0.72
+					if absf(dlat - track.lateral(position, idx)) < dg[1] + 2.4 and ahead < maxf(speed, 0.0) * 0.7 + 8.0:
+						avoid_brake = true
+	lane = move_toward(lane, lane_target, dt * (2.5 if dangers.is_empty() else 10.0))
 	var n := track.n
-	var look := 9.0 + maxf(speed, 0.0) * 0.42
+	var look := 9.0 + maxf(speed, 0.0) * (0.42 if first == INF else 0.2)
 	var ti := (idx + int(look / Track.SPACING)) % n
 	var target := track.P[ti] + track.R[ti] * lane
 	var to := target - position
@@ -352,6 +403,8 @@ func think(dt: float, others: Array) -> void:
 			var allowed := sqrt(vmax * vmax + 2.0 * BRAKE * 0.7 * dist)
 			want = minf(want, allowed)
 		j += 3
+	if avoid_brake:
+		want = minf(want, 24.0)
 	throttle = 1.0 if speed < want - 1.5 else (0.3 if speed < want + 1.0 else 0.0)
 	brake = 1.0 if speed > want + 5.0 else 0.0
 	drift_input = false
@@ -368,8 +421,13 @@ func _update_visuals(dt: float) -> void:
 	var want := Vector2(pitch, -lat_acc * (0.09 if not drifting else 0.14))
 	_tilt = _tilt.lerp(want, clampf(dt * 6.0, 0.0, 1.0))
 	body.rotation = Vector3(_tilt.x, 0, _tilt.y)
+	var hop := 0.0
+	if hop_t > 0.0:
+		hop_t = maxf(0.0, hop_t - dt)
+		hop = sin(hop_t / 0.7 * PI) * 1.6
+	body.position.y = hop
 	if _hover:
-		body.position.y = 0.15 + sin(Time.get_ticks_msec() * 0.004 + team_idx) * 0.05
+		body.position.y = hop + 0.15 + sin(Time.get_ticks_msec() * 0.004 + team_idx) * 0.05
 	_wheel_spin += speed * dt / 0.42
 	_steer_vis = lerpf(_steer_vis, -steer * 0.45, clampf(dt * 10.0, 0.0, 1.0))
 	for i in _wheels.size():

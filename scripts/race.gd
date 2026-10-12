@@ -1,8 +1,9 @@
 class_name Race
 extends Node3D
 ## One race: builds the track, puts eight cars on the grid, runs the countdown, reads the
-## player's controls, steps every car, handles car-to-car bumps and orbs, follows the player
-## with the camera and reports the results when the player crosses the line on the last lap.
+## player's controls, steps every car, handles car-to-car bumps, orbs and the track's world
+## events (Hazards), follows the player with the camera and reports the results when the player
+## crosses the line on the last lap.
 
 signal race_over(results: Array)
 
@@ -11,6 +12,7 @@ const COUNTDOWN_TIME := 3.6
 const CAM_MODES := 2
 
 var track: Track
+var hazards: Hazards
 var track_index := 0
 var cars: Array[Car] = []
 var player: Car
@@ -65,6 +67,9 @@ func setup(t_index: int, team_index: int) -> void:
 	camera.current = true
 	_ambient = track.make_ambient()
 	add_child(_ambient)
+	hazards = Hazards.new()
+	add_child(hazards)
+	hazards.setup(self)
 	_snap_camera()
 	apply_quality()
 
@@ -103,12 +108,16 @@ func simulate(dt: float) -> void:
 	if racing:
 		time += dt
 	_read_player(dt)
+	hazards.update(dt, state == RACING)
+	var dangers := hazards.dangers()
 	for car in cars:
 		if car != player or autopilot or player.finished:
-			car.think(dt, cars)
+			car.think(dt, cars, dangers)
 			var diff := car.total - player.total
 			car.rubber = clampf(1.0 - diff / 2500.0, 0.93, 1.07) if car != player else 1.0
 		var was_laps := car.laps_done
+		if racing:
+			hazards.affect(car, dt)
 		car.step(dt, racing, time)
 		if car == player:
 			if car.laps_done > was_laps and car.laps_done >= 1 and not car.finished:

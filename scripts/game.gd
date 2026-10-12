@@ -227,4 +227,7 @@ func _build_sounds() -> void:
 	sounds["go"] = make_wav(0.6, func(t, _p): return (sin(TAU * 990.0 * t) + sin(TAU * 1320.0 * t) * 0.5) * 0.35)
 	sounds["orb"] = make_wav(0.3, func(t, p): return sin(TAU * (900.0 + 900.0 * p) * t) * 0.3)
 	sounds["lap"] = make_wav(0.7, func(t, p): return sin(TAU * (784.0 if p < 0.4 else 1046.0) * t) * 0.35)
+	sounds["alarm"] = make_wav(0.9, func(t, p): return sin(TAU * (520.0 if fmod(p * 4.0, 2.0) < 1.0 else 700.0) * t) * 0.35)
+	var blast := _noise(0.12)
+	sounds["boom"] = make_wav(0.9, func(t, p): return blast.call(t, p) * 1.6 + sin(TAU * (60.0 - 30.0 * p) * t) * 0.7)
 	sounds["click"] = make_wav(0.06, func(t, _p): return sin(TAU * 1200.0 * t) * 0.3)
