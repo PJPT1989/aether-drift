@@ -34,3 +34,17 @@ of every track, web build loaded and raced in headless Chromium. Not yet tuned b
 
 The title screen now shows "It's time for planeswalkers to learn how to drive a stick, and the
 importance of family." under the logo (`Game.TAGLINE`), in gold; the shop's game page shows it too.
+
+## 3. Sharper graphics, better cars and world (2026-10-12)
+> I like the tone and visual theme but game we make graphics more sharper, better models of cars, world etc
+
+- Sharper: menus and HUD always draw at the screen's full resolution; the 3D view renders at full
+  resolution with 4x anti-aliasing on High and at up to 1080 lines with 2x anti-aliasing on Medium
+  (before: Medium drew everything at 1280x720 and scaled it up). 8x anisotropic filtering, road
+  textures at 512-1024 px, ground detail at 512 px.
+- Cars: rebuilt as smooth lofted bodies in a glossy paint shader that reflects each track's sky,
+  with glass cabins, painted wheel arches, head and tail lights, rims with spokes, and each team's
+  own parts (ramjets, wings, sun-disc prow, brass hover pod, spines, goblin rocket, shark fin, war-rig cage).
+- World: detailed city buildings (shop fronts, set-back tiers, framed windows, balconies, domes and
+  turrets), fuller trees and palms, fluted columns, rounded curbs and crash barriers, and more
+  detailed arches and landmarks. Distant props and Low quality use lighter versions.

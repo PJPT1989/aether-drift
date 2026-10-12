@@ -45,6 +45,7 @@ var _t := 0.0
 
 func build(track_def: Dictionary) -> void:
 	def = track_def
+	Game.set_paint_sky(def)
 	night = def.get("night", false)
 	elevated = def.get("elevated", false)
 	hw = def.width * 0.5
@@ -270,57 +271,159 @@ func apply_quality() -> void:
 
 # --- road and edges -------------------------------------------------------------
 
+## Road surface, one texture repeat (u across the road, v along 10 m of it): the track's own
+## pattern (tile, pavers, stone slabs or planks) with bevelled joints, fine aggregate grain,
+## rubbered racing lines and crisp painted lines. 1024 px on High, 512 otherwise. Everything that
+## depends on only u or only v is worked out once per column or row.
 func _road_texture() -> ImageTexture:
-	var sz := 256
-	var img := Image.create(sz, sz, false, Image.FORMAT_RGB8)
+	var sz := 1024 if Game.quality == Game.HIGH else 512
+	var px := sz / 1024.0
 	var base: Color = def.road_col
 	var line: Color = def.line_col
-	var rng := RandomNumberGenerator.new()
-	rng.seed = hash(def.name) + 3
 	var style: String = def.road
-	for y in sz:
+	# fine grain repeats every 256 px; the large blotches are made at half size (both are slow)
+	var fine := FastNoiseLite.new()
+	fine.seed = hash(def.name) + 4
+	fine.frequency = 0.3
+	var blot := FastNoiseLite.new()
+	blot.seed = hash(def.name) + 5
+	blot.frequency = 0.024 / px
+	blot.fractal_octaves = 3
+	var fd := fine.get_seamless_image(256, 256).get_data()
+	var hs := sz / 2
+	var bd := blot.get_seamless_image(hs, hs).get_data()
+	var joint := Color(0.55, 0.32, 0.18) if style == "tile" else base.darkened(0.45 if style != "planks" else 0.65)
+	# the pattern: blocks per row of the texture (cols), rows, and how far each row is shifted
+	var cols := 6.0
+	var rows := 4.0
+	var shift := 0.0
+	var tone_amp := 0.08
+	match style:
+		"pavers":
+			cols = 10.0
+			rows = 16.0
+			shift = 0.5
+			tone_amp = 0.15
+		"stone":
+			cols = 4.0
+			rows = 3.0
+			shift = 0.37
+			tone_amp = 0.12
+		"planks":
+			cols = 1.0
+			rows = 12.0
+			tone_amp = 0.15
+	var nrows := int(rows)
+	# per row of blocks: joint distance and block index for every column
+	var du: Array = []
+	var cu: Array = []
+	for br in nrows:
+		var dd := PackedFloat32Array()
+		var cc := PackedInt32Array()
+		dd.resize(sz)
+		cc.resize(sz)
+		var off := fposmod(br * shift, 1.0)
 		for x in sz:
-			var u := x / float(sz)
-			var v := y / float(sz)
-			var c := base
-			var grain := rng.randf_range(-0.04, 0.04)
-			match style:
-				"tile":
-					var tu := fposmod(u * 6.0, 1.0)
-					var tv := fposmod(v * 4.0, 1.0)
-					if tu < 0.04 or tv < 0.05:
-						c = Color(0.55, 0.32, 0.18)
-					else:
-						c = base.lightened(_noise2.get_noise_2d(floor(u * 6.0) * 13.0, floor(v * 4.0) * 7.0) * 0.12)
-				"pavers":
-					var row := floori(v * 16.0)
-					var tu := fposmod(u * 10.0 + (0.5 if row % 2 == 1 else 0.0), 1.0)
-					var tv := fposmod(v * 16.0, 1.0)
-					c = base.lightened(_noise2.get_noise_2d(floor(u * 10.0 + row * 0.5) * 11.0, row * 5.0) * 0.18)
-					if tu < 0.06 or tv < 0.1:
-						c = base.darkened(0.35)
-				"stone":
-					var row := floori(v * 3.0)
-					var tu := fposmod(u * 4.0 + row * 0.37, 1.0)
-					var tv := fposmod(v * 3.0, 1.0)
-					c = base.lightened(_noise2.get_noise_2d(floor(u * 4.0 + row * 0.37) * 17.0, row * 9.0) * 0.15)
-					if tu < 0.02 or tv < 0.025:
-						c = base.darkened(0.3)
-				"planks":
-					var tv := fposmod(v * 12.0, 1.0)
-					var plank := floori(v * 12.0)
-					c = base.lightened(_noise2.get_noise_2d(plank * 31.0, 0) * 0.2 + sin(u * 90.0 + plank) * 0.03)
-					if tv < 0.08:
-						c = base.darkened(0.6)
-			c = c.lightened(grain) if grain > 0.0 else c.darkened(-grain)
-			# edge lines and a dashed centre line
-			if (u > 0.025 and u < 0.045) or (u > 0.955 and u < 0.975):
-				c = line
-			elif absf(u - 0.5) < 0.008 and v < 0.5:
-				c = line.lerp(base, 0.25)
-			img.set_pixel(x, y, c)
+			var c := (x + 0.5) / sz * cols + off
+			var fr := fposmod(c, 1.0)
+			dd[x] = 99.0 if style == "planks" else minf(fr, 1.0 - fr) * sz / cols
+			cc[x] = int(floorf(c))
+		du.append(dd)
+		cu.append(cc)
+	var tone := {}
+	# per column: rubber on the racing lines, grime at the edges, painted lines
+	var wear := PackedFloat32Array()
+	var grime := PackedFloat32Array()
+	var edge := PackedFloat32Array()
+	var dash := PackedFloat32Array()
+	var nail_x := PackedByteArray()
+	wear.resize(sz)
+	grime.resize(sz)
+	edge.resize(sz)
+	dash.resize(sz)
+	nail_x.resize(sz)
+	for x in sz:
+		var u := (x + 0.5) / sz
+		wear[x] = exp(-pow((u - 0.33) / 0.07, 2.0)) + exp(-pow((u - 0.67) / 0.07, 2.0))
+		grime[x] = 1.0 - clampf(1.0 - minf(u, 1.0 - u) / 0.08, 0.0, 1.0) * 0.12
+		edge[x] = clampf(minf(u - 0.025, 0.045 - u) * sz + 0.5, 0.0, 1.0) + clampf(minf(u - 0.955, 0.975 - u) * sz + 0.5, 0.0, 1.0)
+		dash[x] = clampf((0.007 - absf(u - 0.5)) * sz + 0.5, 0.0, 1.0) * 0.85
+		nail_x[x] = 1 if style == "planks" and (absf(u - 0.07) * sz < 2.5 * px + 0.8 or absf(u - 0.5) * sz < 2.5 * px + 0.8 or absf(u - 0.93) * sz < 2.5 * px + 0.8) else 0
+	var jw := 3.0 * px + 1.0
+	var plank_wear := style == "planks"
+	var stone := style == "stone"
+	var lr := line.r
+	var lg := line.g
+	var lb := line.b
+	var data := PackedByteArray()
+	data.resize(sz * sz * 3)
+	for y in sz:
+		var v := (y + 0.5) / sz
+		var rv := v * rows
+		var br := int(floorf(rv)) % nrows
+		var fr := fposmod(rv, 1.0)
+		var dv := minf(fr, 1.0 - fr) * sz / rows * (1.3 if plank_wear else 1.0)
+		var nail_y := plank_wear and absf(absf(fr - 0.5) - 0.28) * sz / rows < 2.5 * px + 0.8
+		var dash_v := clampf(minf(v - 0.02, 0.5 - v) * sz + 0.5, 0.0, 1.0)
+		var row_du: PackedFloat32Array = du[br]
+		var row_cu: PackedInt32Array = cu[br]
+		var last_cell := -999
+		var t := 0.0
+		for x in sz:
+			var i := y * sz + x
+			var f := fd[(y & 255) * 256 + (x & 255)] / 255.0 - 0.5
+			var b := bd[(y >> 1) * hs + (x >> 1)] / 255.0 - 0.5
+			var cell := row_cu[x]
+			if cell != last_cell:
+				var key := cell * 64 + br
+				if not tone.has(key):
+					tone[key] = (_hash01(float(cell), float(br)) * 2.0 - 1.0) * tone_amp
+				t = tone[key]
+				last_cell = cell
+			var m := 1.0 + t + f * 0.2 + b * 0.12
+			if plank_wear:
+				m += sin(x * 170.0 / sz + b * 30.0 + br * 2.0) * 0.035
+				if nail_y and nail_x[x] == 1:
+					m -= 0.35
+			var d := minf(row_du[x], dv)
+			if stone and absf(b) < 0.0025 and f > 0.05:
+				d = 0.0
+			var cr: float
+			var cg: float
+			var cb: float
+			if d < jw:
+				var jm := 1.0 - f * 0.3
+				cr = joint.r * jm
+				cg = joint.g * jm
+				cb = joint.b * jm
+			else:
+				if d < jw * 3.0:
+					m *= 1.0 - (1.0 - (d - jw) / (jw * 2.0)) * 0.2
+				if plank_wear:
+					m += wear[x] * 0.06 * (0.6 + b)
+				else:
+					m *= 1.0 - wear[x] * 0.13 * clampf(0.6 + b * 1.5, 0.0, 1.2)
+				m *= grime[x]
+				cr = base.r * m
+				cg = base.g * m
+				cb = base.b * m
+			var cov := maxf(edge[x], dash[x] * dash_v)
+			if cov > 0.0:
+				var lm := 1.0 - clampf(f * 0.25 + 0.05, 0.0, 0.2)
+				cr = lerpf(cr, lr * lm, cov)
+				cg = lerpf(cg, lg * lm, cov)
+				cb = lerpf(cb, lb * lm, cov)
+			data[i * 3] = int(clampf(cr, 0.0, 1.0) * 255.0)
+			data[i * 3 + 1] = int(clampf(cg, 0.0, 1.0) * 255.0)
+			data[i * 3 + 2] = int(clampf(cb, 0.0, 1.0) * 255.0)
+	var img := Image.create_from_data(sz, sz, false, Image.FORMAT_RGB8, data)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
+
+
+## Repeatable pseudo-random 0..1 for a pair of cell coordinates.
+static func _hash01(a: float, b: float) -> float:
+	return fposmod(sin(a * 12.9898 + b * 78.233) * 43758.5453, 1.0)
 
 
 func _build_road() -> void:
@@ -354,22 +457,24 @@ func _build_road() -> void:
 	mi.mesh = st.commit()
 	mi.material_override = mat
 	add_child(mi)
-	# curbs: alternating colour blocks, a little raised
+	# curbs: alternating colour blocks with a rounded, raised profile (outward offset, height)
 	var k := MeshKit.new()
 	var ca: Color = def.curb[0]
 	var cb: Color = def.curb[1]
+	var prof := [Vector2(0.0, 0.065), Vector2(0.12, 0.12), Vector2(0.32, 0.15), Vector2(CURB - 0.32, 0.15), Vector2(CURB - 0.1, 0.09), Vector2(CURB, 0.02)]
 	for i in n:
 		var j := (i + 1) % n
 		var col := ca if (i / 2) % 2 == 0 else cb
 		for s: float in [-1.0, 1.0]:
-			var a0 := P[i] + R[i] * s * hw + Vector3(0, 0.08, 0)
-			var a1 := P[j] + R[j] * s * hw + Vector3(0, 0.08, 0)
-			var b0 := P[i] + R[i] * s * (hw + CURB) + Vector3(0, 0.02, 0)
-			var b1 := P[j] + R[j] * s * (hw + CURB) + Vector3(0, 0.02, 0)
-			if s > 0:
-				k.quad(a0, b0, b1, a1, col)
-			else:
-				k.quad(a0, a1, b1, b0, col)
+			for q in prof.size() - 1:
+				var pa: Vector2 = prof[q]
+				var pb: Vector2 = prof[q + 1]
+				var a0 := P[i] + R[i] * s * (hw + pa.x) + Vector3(0, pa.y, 0)
+				var a1 := P[j] + R[j] * s * (hw + pa.x) + Vector3(0, pa.y, 0)
+				var b0 := P[i] + R[i] * s * (hw + pb.x) + Vector3(0, pb.y, 0)
+				var b1 := P[j] + R[j] * s * (hw + pb.x) + Vector3(0, pb.y, 0)
+				var shade := col.lightened(0.06) if q == 2 else (col if q % 2 == 1 else col.darkened(0.12))
+				Props.quad_f(k, a0, b0, b1, a1, Vector3.UP, shade)
 	# chequered start line
 	for c in 8:
 		for row in 2:
@@ -385,34 +490,73 @@ func _build_road() -> void:
 
 
 func _build_edges() -> void:
-	var k := MeshKit.new()
 	var kind: String = def.edge
 	if kind == "none":
 		return
+	var k := MeshKit.new()
 	var glow := kind == "glowrail"
 	var post := Color(0.3, 0.25, 0.25) if not elevated else Color(0.35, 0.26, 0.18)
-	var rail := Color(0.75, 0.72, 0.7) if not glow else Props.COPPER
 	var gcol: Color = def.line_col
 	for s: float in [-1.0, 1.0]:
-		for i in range(0, n, 3):
-			var j := (i + 3) % n
-			var a := P[i] + R[i] * s * limit
-			var b := P[j] + R[j] * s * limit
-			# rail band: two faces so it shows from both sides
-			var h0 := Vector3(0, 0.45, 0)
-			var h1 := Vector3(0, 1.0, 0)
-			k.quad(a + h0, b + h0, b + h1, a + h1, rail)
-			k.quad(a + h0, a + h1, b + h1, b + h0, rail)
+		if glow:
+			# copper tube rail, a flat lower bar and an aether strip on top
+			_sweep(k, s, _circle(Vector2(0.0, 0.92), 0.11, 8), Props.COPPER, 3)
+			_sweep(k, s, PackedVector2Array([Vector2(-0.04, 0.42), Vector2(0.04, 0.42), Vector2(0.05, 0.56), Vector2(0.04, 0.7), Vector2(-0.04, 0.7), Vector2(-0.05, 0.56)]), Props.COPPER.darkened(0.3), 3)
+			_sweep(k, s, _circle(Vector2(0.0, 1.1), 0.055, 5), gcol, 3, true)
+		else:
+			# a rounded crash barrier on posts
+			_sweep(k, s, PackedVector2Array([Vector2(-0.05, 0.5), Vector2(0.06, 0.53), Vector2(0.11, 0.62), Vector2(0.07, 0.72), Vector2(0.11, 0.83), Vector2(0.06, 0.92), Vector2(-0.05, 0.95), Vector2(-0.08, 0.72)]), Color(0.75, 0.72, 0.7), 3)
+		for i in range(0, n, 6):
+			var a := P[i] + R[i] * s * (limit + 0.18)
 			if glow:
-				var g0 := Vector3(0, 1.0, 0)
-				var g1 := Vector3(0, 1.18, 0)
-				k.quad(a + g0, b + g0, b + g1, a + g1, gcol, true)
-				k.quad(a + g0, a + g1, b + g1, b + g0, gcol, true)
-			if i % 6 == 0:
-				k.box(a + Vector3(0, 0.6, 0), Vector3(0.25, 1.2, 0.25), post)
+				k.cyl(a + Vector3(0, -0.1, 0), a + Vector3(0, 1.0, 0), 0.09, 0.08, post, 8, false, true, false)
+				k.sphere(a + Vector3(0, 1.1, 0), Vector3(0.13, 0.13, 0.13), Props.BRASS, 8, 4)
+			else:
+				var yaw := atan2(R[i].x, R[i].z)
+				k.box(a + Vector3(0, 0.45, 0), Vector3(0.2, 1.1, 0.2), post, false, yaw)
+				k.taper(a + Vector3(0, 1.0, 0), Vector2(0.28, 0.28), Vector2(0.04, 0.04), 0.18, Props.BRASS.darkened(0.2), false, yaw)
 	var mi := MeshInstance3D.new()
 	mi.mesh = k.commit()
 	add_child(mi)
+
+
+## Points round a circle in the (outward, height) plane, for `_sweep`.
+func _circle(c: Vector2, r: float, segs: int) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for q in segs:
+		var a := TAU * q / segs
+		pts.append(c + Vector2(cos(a), sin(a)) * r)
+	return pts
+
+
+## Extrudes the closed profile `prof` (x: outward from the wall line, y: height) along side `s`
+## of the track, a section every `step` samples. Normals point away from the profile's centre.
+func _sweep(k: MeshKit, s: float, prof: PackedVector2Array, col: Color, step: int, glow := false) -> void:
+	var cen := Vector2.ZERO
+	for p in prof:
+		cen += p
+	cen /= prof.size()
+	var m := prof.size()
+	var idxs: Array = range(0, n, step)
+	idxs.append(0)
+	var prev := PackedVector3Array()
+	var prevn := PackedVector3Array()
+	for ii in idxs.size():
+		var i: int = idxs[ii]
+		var out := R[i] * s
+		var cur := PackedVector3Array()
+		var curn := PackedVector3Array()
+		for p in prof:
+			cur.append(P[i] + out * (limit + p.x) + Vector3(0, p.y, 0))
+			var d := (p - cen).normalized()
+			curn.append((out * d.x + Vector3(0, d.y, 0)).normalized())
+		if ii > 0:
+			for j in m:
+				var j1 := (j + 1) % m
+				Props.tri_n(k, prev[j], cur[j], cur[j1], prevn[j], curn[j], curn[j1], col, glow)
+				Props.tri_n(k, prev[j], cur[j1], prev[j1], prevn[j], curn[j1], prevn[j1], col, glow)
+		prev = cur
+		prevn = curn
 
 
 # --- terrain ---------------------------------------------------------------------
@@ -507,22 +651,44 @@ func _build_terrain() -> void:
 	mat.albedo_texture = _detail_texture()
 	mat.roughness = 0.95
 	mat.metallic_specular = 0.1
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
 	mi.material_override = mat
 	add_child(mi)
 
 
+## Grey ground detail multiplied over the terrain's vertex colours: soft patches, fine grit and
+## dark specks; wind ripples on the dunes. Tiles seamlessly every 9 m.
 func _detail_texture() -> ImageTexture:
-	var nz := FastNoiseLite.new()
-	nz.seed = 9
-	nz.frequency = 0.09
-	var img := Image.create(128, 128, false, Image.FORMAT_RGB8)
-	for y in 128:
-		for x in 128:
-			var v := 0.82 + nz.get_noise_2d(x, y) * 0.15 + randf() * 0.06
-			img.set_pixel(x, y, Color(v, v, v))
+	var sz := 512 if Game.quality != Game.LOW else 256
+	var n1 := FastNoiseLite.new()
+	n1.seed = 9
+	n1.frequency = 8.0 / sz
+	n1.fractal_octaves = 4
+	var n2 := FastNoiseLite.new()
+	n2.seed = 10
+	n2.frequency = 64.0 / sz
+	var d1 := n1.get_seamless_image(sz, sz).get_data()
+	var d2 := n2.get_seamless_image(sz, sz).get_data()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 12
+	var dunes: bool = def.get("dunes", false)
+	var data := PackedByteArray()
+	data.resize(sz * sz)
+	for y in sz:
+		for x in sz:
+			var i := y * sz + x
+			var a := d1[i] / 255.0 - 0.5
+			var b := d2[i] / 255.0 - 0.5
+			var v := 0.84 + a * 0.24 + b * 0.12 + rng.randf_range(-0.04, 0.04)
+			if dunes:
+				v += sin(TAU * (x * 18.0 / sz + y * 4.0 / sz) + a * 6.0) * 0.05
+			elif rng.randf() < 0.025:
+				v -= 0.14
+			data[i] = int(clampf(v, 0.0, 1.0) * 255.0)
+	var img := Image.create_from_data(sz, sz, false, Image.FORMAT_L8, data)
+	img.convert(Image.FORMAT_RGB8)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
@@ -578,7 +744,8 @@ func _build_supports() -> void:
 		var g := ground_y(P[i].x, P[i].z)
 		for s: float in [-1.0, 1.0]:
 			var top := P[i] + R[i] * s * (limit - 1.0) + Vector3(0, -1.2, 0)
-			k.cyl(Vector3(top.x, g - 1.0, top.z), top, 1.3, 0.8, stone, 7)
+			k.cyl(Vector3(top.x, g - 1.0, top.z), top, 1.3, 0.8, stone, 10)
+			k.cyl(top - Vector3(0, 0.5, 0), top, 1.1, 1.1, Props.BRASS.darkened(0.3), 10)
 		k.cyl(P[i] - R[i] * (limit - 1.0) + Vector3(0, -1.3, 0), P[i] + R[i] * (limit - 1.0) + Vector3(0, -1.3, 0), 0.5, 0.5, wood, 5)
 		if i % 48 == 0:
 			k.ring(Vector3(P[i].x, g + 4.0, P[i].z) + R[i] * (limit - 1.0), Vector3.UP, 1.8, 0.2, def.line_col, 12, 3, true)
@@ -674,7 +841,8 @@ func _build_props() -> void:
 			if kind in Props.ANIMATED:
 				_animated_prop(kind, xf, rng.randi() % Props.VARIANTS)
 				continue
-			var key := "%s/%d" % [kind, rng.randi() % Props.VARIANTS]
+			var lite := Game.quality == Game.LOW or dmin >= 100.0
+			var key := "%s/%d/%d" % [kind, rng.randi() % Props.VARIANTS, 1 if lite else 0]
 			if not by_mesh.has(key):
 				by_mesh[key] = []
 			by_mesh[key].append(xf)
@@ -682,13 +850,13 @@ func _build_props() -> void:
 		var parts: PackedStringArray = key.split("/")
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = Props.prop(parts[0], int(parts[1]), night)
+		mm.mesh = Props.prop(parts[0], int(parts[1]), night, parts[2] == "1")
 		mm.instance_count = by_mesh[key].size()
 		for i in by_mesh[key].size():
 			mm.set_instance_transform(i, by_mesh[key][i])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if parts[0] in ["city", "giant_tree", "palm", "obelisk", "column"] else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if parts[0] in ["city", "giant_tree", "palm", "obelisk", "column"] and parts[2] == "0" else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mmi)
 
 
@@ -696,7 +864,7 @@ func _animated_prop(kind: String, xf: Transform3D, v: int) -> void:
 	var node := Node3D.new()
 	node.transform = xf
 	var mi := MeshInstance3D.new()
-	mi.mesh = Props.prop(kind, v, night)
+	mi.mesh = Props.prop(kind, v, night, Game.quality == Game.LOW)
 	node.add_child(mi)
 	match kind:
 		"windmill":
@@ -727,7 +895,8 @@ func _orient_to_road(pos: Vector3, i: int) -> Basis:
 
 func _build_arches() -> void:
 	var every: float = def.arch_every
-	var mesh := Props.arch(def.arch, hw * 2.0 + CURB * 2.0, night)
+	# pillars stand just outside the walls
+	var mesh := Props.arch(def.arch, maxf(hw * 2.0 + CURB * 2.0, (limit - 1.2) * 2.0), night)
 	var pos := 90.0
 	while pos < length - 60.0:
 		var i := idx_at(pos)
@@ -800,10 +969,17 @@ func _build_pipeline(i0: int, side: float, dist: float) -> void:
 		var p := P[i] + R[i] * side * (limit + dist)
 		p.y = maxf(ground_y(p.x, p.z), P[i].y) + 9.0
 		if s > 0:
-			k.cyl(prev, p, 1.1, 1.1, Props.COPPER, 8, false, true, false)
-			k.cyl(prev.lerp(p, 0.45), prev.lerp(p, 0.55), 1.25, 1.25, Props.AETHER, 8, true)
+			k.cyl(prev, p, 1.1, 1.1, Props.COPPER, 14, false, true, false)
+			k.cyl(prev.lerp(p, 0.42), prev.lerp(p, 0.58), 1.18, 1.18, Props.AETHER, 14, true)
+			k.cyl(prev.lerp(p, 0.4), prev.lerp(p, 0.42), 1.32, 1.32, Props.BRASS, 14)
+			k.cyl(prev.lerp(p, 0.58), prev.lerp(p, 0.6), 1.32, 1.32, Props.BRASS, 14)
+			var fl := (p - prev).normalized() * 0.25
+			k.cyl(p - fl, p + fl, 1.35, 1.35, Props.BRASS.darkened(0.15), 14)
 		if s % 2 == 0:
-			k.cyl(Vector3(p.x, ground_y(p.x, p.z) - 1.0, p.z), p, 0.5, 0.4, Props.BRASS.darkened(0.3), 6)
+			var g := Vector3(p.x, ground_y(p.x, p.z) - 1.0, p.z)
+			k.cyl(g, p - Vector3(0, 1.0, 0), 0.5, 0.4, Props.BRASS.darkened(0.3), 10)
+			k.cyl(g, g + Vector3(0, 1.6, 0), 1.0, 0.8, Color(0.5, 0.45, 0.4), 10)
+			k.cyl(p - Vector3(0, 1.2, 0), p - Vector3(0, 0.9, 0), 0.9, 0.9, Props.BRASS.darkened(0.2), 10)
 		prev = p
 	var mi := MeshInstance3D.new()
 	mi.mesh = k.commit()
