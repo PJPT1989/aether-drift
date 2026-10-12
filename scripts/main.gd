@@ -211,7 +211,10 @@ func show_title() -> void:
 	showcase.set_team(sel_team)
 	var v := _box(Control.PRESET_TOP_LEFT, Vector2(60, 50))
 	v.add_child(_title_label())
-	v.add_child(_label("The Grand Prix across the planes", 22, Game.font_bold, Color(1, 1, 1, 0.85)))
+	var tag := _label(Game.TAGLINE, 20, Game.font_bold, Color(1.0, 0.85, 0.5))
+	tag.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tag.custom_minimum_size = Vector2(840, 0)
+	v.add_child(tag)
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 30)
 	v.add_child(gap)

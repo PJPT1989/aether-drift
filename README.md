@@ -1,5 +1,7 @@
 # Need for Speed: ~~Tokyo~~ Aether Drift
 
+*It's time for planeswalkers to learn how to drive a stick, and the importance of family.*
+
 An arcade racing game in **Godot 4.3**, set in the world of a multiversal Grand Prix: eight teams
 race across three planes through portals, from a copper-and-aether city of invention to a revived
 desert river, a primordial jungle and the boiling desert, and back for the finale. Inspired by the

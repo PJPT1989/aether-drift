@@ -27,3 +27,10 @@ keyboard and gamepad, generated sounds. All art is generated from code.
 
 Tested: headless simulation (all 8 cars finish on every track, laps 34-44 s), smoke test screenshots
 of every track, web build loaded and raced in headless Chromium. Not yet tuned by a human player.
+
+## 2. Tagline (2026-10-12)
+> Put in the title of video game phrase like "Its time for planeswalkers to learn how to drive a
+> stick and importance of family"
+
+The title screen now shows "It's time for planeswalkers to learn how to drive a stick, and the
+importance of family." under the logo (`Game.TAGLINE`), in gold; the shop's game page shows it too.
