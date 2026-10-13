@@ -14,6 +14,9 @@ const COUNTDOWN_TIME := 3.6
 const CAM_MODES := 2
 ## Online: once the first player finishes, the others get this long before the results.
 const NET_FINISH_WAIT := 45.0
+## half size of the box each car collides as (bodies are about 2.1 m wide and 4.6 m long)
+const CAR_HALF_WIDTH := 1.05
+const CAR_HALF_LEN := 2.3
 
 var track: Track
 var hazards: Hazards
@@ -264,26 +267,43 @@ func _collide_cars() -> void:
 			if absf(d.y) > 2.5:
 				continue
 			d.y = 0.0
-			var dist := d.length()
-			if dist < 2.3 and dist > 0.001:
-				var nrm := d / dist
-				# a car driven on another machine is moved there; only the local one is pushed here
-				var push := (2.3 - dist) * (1.0 if ca.remote or cb.remote else 0.5)
+			if d.length_squared() > 36.0:
+				continue
+			# cars are boxes, not circles: test both cars' long and short axes and push out
+			# along the one with the least overlap
+			var axes: Array[Vector3] = [ca.forward(), ca.right(), cb.forward(), cb.right()]
+			var depth := INF
+			var nrm := Vector3.ZERO
+			for ax in axes:
+				var ra := CAR_HALF_LEN * absf(ca.forward().dot(ax)) + CAR_HALF_WIDTH * absf(ca.right().dot(ax))
+				var rb := CAR_HALF_LEN * absf(cb.forward().dot(ax)) + CAR_HALF_WIDTH * absf(cb.right().dot(ax))
+				var sep := d.dot(ax)
+				var over := ra + rb - absf(sep)
+				if over <= 0.0:
+					depth = 0.0
+					break
+				if over < depth:
+					depth = over
+					nrm = ax if sep >= 0.0 else -ax
+			if depth <= 0.0:
+				continue
+			# a car driven on another machine is moved there; only the local one is pushed here
+			var push := depth * (1.0 if ca.remote or cb.remote else 0.5)
+			if not ca.remote:
+				ca.position -= nrm * push
+			if not cb.remote:
+				cb.position += nrm * push
+			var rel := (cb.vel - ca.vel).dot(nrm)
+			if rel < 0.0:
+				var imp := -rel * 0.6
 				if not ca.remote:
-					ca.position -= nrm * push
+					ca.vel -= nrm * imp
 				if not cb.remote:
-					cb.position += nrm * push
-				var rel := (cb.vel - ca.vel).dot(nrm)
-				if rel < 0.0:
-					var imp := -rel * 0.6
-					if not ca.remote:
-						ca.vel -= nrm * imp
-					if not cb.remote:
-						cb.vel += nrm * imp
-					if ca == player or cb == player:
-						if imp > 2.0:
-							Game.play("hit", clampf(-22.0 + imp * 2.0, -16.0, -2.0), 1.3)
-						shake = maxf(shake, clampf(imp / 20.0, 0.05, 0.5))
+					cb.vel += nrm * imp
+				if ca == player or cb == player:
+					if imp > 2.0:
+						Game.play("hit", clampf(-22.0 + imp * 2.0, -16.0, -2.0), 1.3)
+					shake = maxf(shake, clampf(imp / 20.0, 0.05, 0.5))
 
 
 func _rank() -> void:
