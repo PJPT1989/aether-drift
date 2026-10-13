@@ -708,10 +708,13 @@ func show_lobby() -> void:
 	head.add_theme_constant_override("separation", 16)
 	head.add_child(_label("ROOM", 34, Game.font_title, CYAN))
 	head.add_child(_label(Net.code, 34, Game.font_title, GOLD))
-	var copy := _button("COPY INVITE LINK" if Game.web else "COPY ADDRESS", func():
+	head.add_child(_button("COPY CODE" if Game.web else "COPY ADDRESS", func():
 		Net.copy_invite()
-		Net._set_status("Copied - send it to your friends."))
-	head.add_child(copy)
+		Net._set_status("Code copied - send it to your friends.")))
+	if Game.web:
+		head.add_child(_button("COPY LINK", func():
+			Net.copy_invite(true)
+			Net._set_status("Invite link copied - opening it joins the room.")))
 	v.add_child(head)
 	# players
 	var list := PanelContainer.new()
