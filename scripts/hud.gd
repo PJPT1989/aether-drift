@@ -54,9 +54,9 @@ func _draw() -> void:
 	draw_rect(Rect2(16, 16, 250, 132), PANEL)
 	_text(Vector2(30, 76), "%d" % p.place, 56, GOLD, Game.font_title)
 	_text(Vector2(30 + 38 * str(p.place).length(), 76), "/%d" % race.cars.size(), 26, Color(1, 1, 1, 0.8), Game.font_title)
-	var lap := clampi(p.laps_done + 1, 1, Game.LAPS)
+	var lap := clampi(p.laps_done + 1, 1, Game.laps)
 	_text(Vector2(150, 50), "LAP", 15, Color(1, 1, 1, 0.6), Game.font_title)
-	_text(Vector2(150, 80), "%d/%d" % [lap, Game.LAPS], 28, Color.WHITE, Game.font_title)
+	_text(Vector2(150, 80), "%d/%d" % [lap, Game.laps], 28, Color.WHITE, Game.font_title)
 	_text(Vector2(30, 110), "TIME  " + Race.fmt_time(race.time), 18, Color.WHITE)
 	_text(Vector2(30, 134), "BEST  " + Race.fmt_time(p.best_lap), 16, Color(1, 1, 1, 0.7))
 	# standings
@@ -69,7 +69,8 @@ func _draw() -> void:
 		draw_rect(Rect2(16, y - 17, 230, 23), Color(1, 1, 1, 0.16) if me else Color(0, 0, 0, 0.35))
 		draw_rect(Rect2(16, y - 17, 5, 23), col)
 		_text(Vector2(28, y), "%d" % c.place, 16, GOLD if me else Color.WHITE, Game.font_title)
-		_text(Vector2(54, y), c.team.name + ("  (you)" if me else ""), 16, Color.WHITE if me else Color(1, 1, 1, 0.8))
+		var who: String = c.driver if c.driver != "" else c.team.name
+		_text(Vector2(54, y), who + ("  (you)" if me else ""), 16, Color.WHITE if me else Color(1, 1, 1, 0.8))
 		y += 26.0
 	_draw_map(Vector2(sz.x - 230, 20))
 	_draw_speedo(Vector2(sz.x - 150, sz.y - 130), p)

@@ -42,6 +42,15 @@ Sister project: `PJPT1989/ashen-depths` (same tooling). The web build is publish
   sees obstacles through `think(..., dangers)` only when `Car.alert` (re-rolled per event, 60%).
   The sim test prints events and spins per track. After adding a new `class_name` script, run
   `godot --headless --path . --import` once so the class cache knows it.
+- Multiplayer (`scripts/net.gd`, autoload `Net`): host-run rooms over Godot's high-level multiplayer,
+  WebRTC in the browser (signalling via `tools/web/aether-net.js`, which uses the shop page's
+  `window.AetherSignal` Supabase channel or, without it, a BroadcastChannel between tabs) and ENet on
+  desktop. A car with `Car.remote` is driven elsewhere and follows `net_apply`/`net_follow`; only
+  local cars run `think`/`step`/`hazards.affect`. Anything random in a world event must use
+  `Hazards.rng` (seeded per event) so all players build the same one. Test with
+  `tools/net_test.sh [dir] [xvfb]` (both sides must print the same results line) and, for the web
+  build, two Chromium tabs on `index.html?aenet=host=CODE,start=2,laps=1,bot` and `?aenet=join=CODE,bot`
+  (launch with `--disable-features=WebRtcHideLocalIpsWithMdns`).
 - Each camera carries its environment (`camera.environment`); do not add WorldEnvironment nodes.
 - Quality (`Game.quality`, L key, `user://settings.cfg`): the UI always draws at native resolution
   (canvas_items stretch); `Main._apply_quality` sets the 3D `scaling_3d_scale` and MSAA. HIGH full

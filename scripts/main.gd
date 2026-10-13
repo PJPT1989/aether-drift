@@ -1,6 +1,7 @@
 extends Node
 ## Runs the game: title screen, track and team choice, the race with its HUD, pause menu,
-## results and the six-leg Grand Prix. Also applies the graphics quality, and hands over to
+## results, the six-leg Grand Prix and online rooms (Net: host or join, the room, races with
+## friends and bots). Also applies the graphics quality, and hands over to
 ## scripts/autotest.gd (smoke test) or a headless simulation (--simtest) when asked.
 
 const POINTS := [10, 8, 6, 5, 4, 3, 2, 1]
@@ -40,9 +41,26 @@ func _ready() -> void:
 	if "--lineup" in args:
 		add_child(load("res://tools/car_lineup.gd").new())
 		return
+	Net.lobby_changed.connect(func(): if race == null: show_lobby())
+	Net.status_changed.connect(_net_status)
+	Net.race_start.connect(func(cfg: Dictionary):
+		mode = "net"
+		Game.laps = int(cfg.laps)
+		start_race(int(cfg.track), -1, cfg.grid))
+	Net.go.connect(func(): if race: race.go())
+	Net.results_in.connect(func(res: Array): if race: race.net_results(res))
+	Net.lobby_again.connect(show_lobby)
+	Net.left.connect(func(reason: String): show_multiplayer(reason))
 	showcase = Showcase.new()
 	add_child(showcase)
 	show_title()
+	if not Net.test_args.is_empty():
+		var t := Node.new()
+		t.set_script(load("res://scripts/nettest.gd"))
+		t.set("main", self)
+		add_child(t)
+	elif Net.invite_code() != "":
+		show_multiplayer()
 	if "--autotest" in args:
 		var t := Node.new()
 		t.set_script(load("res://scripts/autotest.gd"))
@@ -224,17 +242,18 @@ func show_title() -> void:
 	tag.custom_minimum_size = Vector2(840, 0)
 	v.add_child(tag)
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 30)
+	gap.custom_minimum_size = Vector2(0, 12)
 	v.add_child(gap)
-	var bw := 340.0
+	var bw := 420.0
 	for b in [_button("QUICK RACE", func(): mode = "quick"; show_tracks()),
 			_button("GRAND PRIX - 6 LEGS", func(): mode = "gp"; show_teams()),
+			_button("MULTIPLAYER - FRIENDS AND BOTS", func(): show_multiplayer()),
 			_button("GRAPHICS: " + Game.QUALITY_NAMES[Game.quality].to_upper(), func(): Game.cycle_quality()),
 			_button("SOUND: " + ("OFF" if Game.muted else "ON"), func(): Game.toggle_mute(); show_title())]:
-		b.custom_minimum_size = Vector2(bw, 48)
+		b.custom_minimum_size = Vector2(bw, 44)
 		b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		v.add_child(b)
-	screen.set_meta("quality_button", v.get_child(5))
+	screen.set_meta("quality_button", v.get_child(6))
 	var help := PanelContainer.new()
 	help.anchor_top = 1.0
 	help.anchor_bottom = 1.0
@@ -350,6 +369,7 @@ func show_teams() -> void:
 	row.add_theme_constant_override("separation", 10)
 	row.add_child(_button("BACK", show_tracks if mode == "quick" else show_title))
 	var go := _button("RACE!", func():
+		Game.laps = Game.LAPS
 		if mode == "gp":
 			gp_round = 0
 			gp_points.clear()
@@ -378,7 +398,8 @@ func _back_to_showcase() -> void:
 		showcase.get_child(showcase.get_child_count() - 1).current = true
 
 
-func start_race(t_index: int, team_index: int) -> void:
+## `grid` (online) lists the cars from pole, see Race.setup.
+func start_race(t_index: int, team_index: int, grid: Array = []) -> void:
 	sel_track = t_index
 	sel_team = team_index
 	_new_screen()
@@ -402,8 +423,10 @@ func start_race(t_index: int, team_index: int) -> void:
 	race = Race.new()
 	add_child(race)
 	race.process_mode = Node.PROCESS_MODE_PAUSABLE
-	race.setup(t_index, team_index)
+	race.setup(t_index, team_index, grid)
 	race.race_over.connect(_on_race_over)
+	if not grid.is_empty():
+		Net.race = race
 	print("track %d built in %d ms" % [t_index, Time.get_ticks_msec() - t0])
 	_new_screen()
 	hud = Hud.new()
@@ -411,9 +434,14 @@ func start_race(t_index: int, team_index: int) -> void:
 	ui.move_child(hud, 0)
 	hud.setup(race)
 	_fps_watch = -1.0
+	if not grid.is_empty():
+		Net.loaded()
 
 
 func _pause() -> void:
+	if mode == "net":
+		_net_menu()
+		return
 	get_tree().paused = true
 	_new_screen()
 	var dim := ColorRect.new()
@@ -436,8 +464,37 @@ func _resume() -> void:
 	_new_screen()
 
 
+## Online the race never pauses: Esc only opens this menu over it.
+func _net_menu() -> void:
+	if screen and screen.has_meta("net_menu"):
+		_resume()
+		return
+	_new_screen()
+	screen.set_meta("net_menu", true)
+	var v := _box(Control.PRESET_CENTER, Vector2(-170, -120))
+	v.add_child(_label("ONLINE RACE", 34, Game.font_title, CYAN))
+	v.add_child(_label("the race goes on while this menu is open", 15, null, Color(1, 1, 1, 0.7)))
+	for b in [_button("BACK TO THE RACE", _resume),
+			_button("GRAPHICS: " + Game.QUALITY_NAMES[Game.quality].to_upper(), func(): Game.cycle_quality()),
+			_button("LEAVE THE ROOM", _leave_room)]:
+		b.custom_minimum_size = Vector2(340, 46)
+		v.add_child(b)
+	screen.set_meta("quality_button", v.get_child(3))
+	(v.get_child(2) as Button).grab_focus()
+
+
+func _leave_room() -> void:
+	Net.leave()
+	mode = "quick"
+	show_title()
+
+
 func _on_race_over(results: Array) -> void:
 	last_results = results
+	if mode == "net":
+		await get_tree().create_timer(0.6).timeout
+		show_results()
+		return
 	if mode == "gp":
 		for r in results:
 			gp_points[r.team] += POINTS[r.place - 1]
@@ -466,12 +523,13 @@ func show_results() -> void:
 	var grid := GridContainer.new()
 	grid.columns = 5 if mode == "gp" else 4
 	grid.add_theme_constant_override("h_separation", 26)
-	for h in ["", "TEAM", "TIME", "BEST LAP"] + (["POINTS"] if mode == "gp" else []):
+	for h in ["", "RACER" if mode == "net" else "TEAM", "TIME", "BEST LAP"] + (["POINTS"] if mode == "gp" else []):
 		grid.add_child(_label(h, 13, Game.font_title, Color(1, 1, 1, 0.6)))
 	for r in last_results:
 		var col: Color = GOLD if r.player else Color.WHITE
 		grid.add_child(_label(Race.ordinal(r.place), 18, Game.font_title, col))
-		grid.add_child(_label(r.name, 18, Game.font_bold, Game.TEAMS[r.team].glow.lerp(Color.WHITE, 0.3) if not r.player else GOLD))
+		var who: String = r.name if str(r.get("driver", "")) == "" else "%s  (%s)" % [r.driver, r.name]
+		grid.add_child(_label(who, 18, Game.font_bold, Game.TEAMS[r.team].glow.lerp(Color.WHITE, 0.3) if not r.player else GOLD))
 		grid.add_child(_label(Race.fmt_time(r.time), 18, null, col))
 		grid.add_child(_label(Race.fmt_time(r.best), 18, null, col))
 		if mode == "gp":
@@ -479,6 +537,16 @@ func show_results() -> void:
 	v.add_child(grid)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
+	if mode == "net":
+		if Net.is_host():
+			row.add_child(_button("BACK TO THE ROOM", Net.back_to_lobby))
+		else:
+			row.add_child(_label("The host picks the next race...", 16, null, Color(1, 1, 1, 0.7)))
+		row.add_child(_button("LEAVE THE ROOM", _leave_room))
+		v.add_child(row)
+		if row.get_child(0) is Button:
+			(row.get_child(0) as Button).grab_focus()
+		return
 	if mode == "gp":
 		if gp_round < Tracks.LIST.size() - 1:
 			row.add_child(_button("STANDINGS", show_standings))
@@ -529,6 +597,191 @@ func show_standings() -> void:
 			gp_round += 1
 			start_race(gp_round, sel_team)))
 	(v.get_child(v.get_child_count() - 1) as Button).grab_focus()
+
+
+# --- online rooms ------------------------------------------------------------------------
+
+func _line_edit(text: String, hint: String, width: float) -> LineEdit:
+	var e := LineEdit.new()
+	e.text = text
+	e.placeholder_text = hint
+	e.custom_minimum_size = Vector2(width, 46)
+	e.add_theme_font_size_override("font_size", 20)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.02, 0.03, 0.08, 0.9)
+	sb.border_color = Color(CYAN, 0.5)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.set_content_margin_all(10)
+	e.add_theme_stylebox_override("normal", sb)
+	var f := sb.duplicate()
+	f.border_color = CYAN
+	e.add_theme_stylebox_override("focus", f)
+	return e
+
+
+func _net_status() -> void:
+	if screen and screen.has_meta("status_label"):
+		var l: Label = screen.get_meta("status_label")
+		if is_instance_valid(l):
+			l.text = Net.status
+
+
+## Host a room or join one. `msg` explains why we are back here (room closed, no room found).
+func show_multiplayer(msg := "") -> void:
+	if Net.active():
+		Net.leave()
+	mode = "quick"
+	_back_to_showcase()
+	_new_screen()
+	var v := _box(Control.PRESET_TOP_LEFT, Vector2(60, 46))
+	v.add_child(_label("MULTIPLAYER", 38, Game.font_title, CYAN))
+	var about := _label("Race your friends online, with bots filling the other seats if you like. One of you hosts a room "
+		+ "and sends the others its code or invite link; up to eight players.", 18, null, Color(1, 1, 1, 0.85))
+	about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	about.custom_minimum_size = Vector2(760, 0)
+	v.add_child(about)
+	v.add_child(_label("YOUR NAME", 14, Game.font_title, Color(1, 1, 1, 0.65)))
+	var name_edit := _line_edit(Net.my_name, "your name", 360)
+	name_edit.max_length = 16
+	name_edit.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	name_edit.text_changed.connect(func(t: String): Net.set_player_name(t))
+	v.add_child(name_edit)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 14)
+	v.add_child(gap)
+	var host := _button("HOST A ROOM", func():
+		Net.set_player_name(name_edit.text)
+		Net.host()
+		if Net.is_host():
+			show_lobby())
+	host.custom_minimum_size = Vector2(360, 50)
+	host.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	v.add_child(host)
+	v.add_child(_label("OR JOIN A FRIEND'S ROOM", 14, Game.font_title, Color(1, 1, 1, 0.65)))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var code_edit := _line_edit(Net.invite_code(), "room code" if Game.web else "host address (IP)", 230)
+	row.add_child(code_edit)
+	var join := _button("JOIN", func():
+		Net.set_player_name(name_edit.text)
+		Net.join(code_edit.text))
+	join.custom_minimum_size = Vector2(120, 46)
+	row.add_child(join)
+	v.add_child(row)
+	code_edit.text_submitted.connect(func(_t: String): join.pressed.emit())
+	var status := _label(msg, 17, null, GOLD)
+	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status.custom_minimum_size = Vector2(760, 0)
+	v.add_child(status)
+	screen.set_meta("status_label", status)
+	var back := _button("BACK", show_title)
+	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	v.add_child(back)
+	if code_edit.text != "":
+		join.grab_focus()
+	else:
+		host.grab_focus()
+
+
+## The room: who is in it with which team, and (for the host) the next race's settings.
+func show_lobby() -> void:
+	if not Net.active():
+		show_multiplayer()
+		return
+	_back_to_showcase()
+	mode = "net"
+	_new_screen()
+	screen.set_meta("lobby", true)
+	showcase.set_track(Net.track)
+	var me: Dictionary = Net.players.get(Net.my_id(), {})
+	if me.has("team"):
+		showcase.set_team(int(me.team))
+	var v := _box(Control.PRESET_TOP_LEFT, Vector2(50, 36))
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 16)
+	head.add_child(_label("ROOM", 34, Game.font_title, CYAN))
+	head.add_child(_label(Net.code, 34, Game.font_title, GOLD))
+	var copy := _button("COPY INVITE LINK" if Game.web else "COPY ADDRESS", func():
+		Net.copy_invite()
+		Net._set_status("Copied - send it to your friends."))
+	head.add_child(copy)
+	v.add_child(head)
+	# players
+	var list := PanelContainer.new()
+	list.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	var lv := VBoxContainer.new()
+	list.add_child(lv)
+	lv.add_child(_label("PLAYERS  %d / %d" % [Net.players.size(), Net.MAX_PLAYERS], 15, Game.font_title, Color(1, 1, 1, 0.65)))
+	var ids := Net.players.keys()
+	ids.sort()
+	for id in ids:
+		var p: Dictionary = Net.players[id]
+		var t: Dictionary = Game.TEAMS[int(p.team)]
+		var tag := ("  (host)" if int(id) == 1 else "") + ("  - you" if int(id) == Net.my_id() else "")
+		lv.add_child(_label("%s   %s%s" % [p.name, t.name, tag], 19, Game.font_bold, t.glow.lerp(Color.WHITE, 0.35)))
+	if Net.bots:
+		var n := Game.TEAMS.size() - Net.players.size()
+		if n > 0:
+			lv.add_child(_label("+ %d bot%s" % [n, "s" if n > 1 else ""], 17, null, Color(1, 1, 1, 0.6)))
+	v.add_child(list)
+	# team choice
+	v.add_child(_label("YOUR TEAM", 14, Game.font_title, Color(1, 1, 1, 0.65)))
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+	var taken := Net.taken_teams()
+	for i in Game.TEAMS.size():
+		var t: Dictionary = Game.TEAMS[i]
+		var b := _button(t.name.to_upper(), func(): Net.pick_team(i))
+		b.custom_minimum_size = Vector2(230, 38)
+		b.add_theme_font_size_override("font_size", 13)
+		b.add_theme_color_override("font_color", t.glow.lerp(Color.WHITE, 0.4))
+		b.disabled = i in taken
+		if me.has("team") and int(me.team) == i:
+			b.text = "> " + b.text + " <"
+		b.mouse_entered.connect(func(): showcase.set_team(i))
+		grid.add_child(b)
+	v.add_child(grid)
+	# race settings
+	var d: Dictionary = Tracks.LIST[Net.track]
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	if Net.is_host():
+		row.add_child(_button("<", func(): Net.set_track(Net.track - 1)))
+		var tl := _label("%d  %s" % [Net.track + 1, d.name.to_upper()], 20, Game.font_title)
+		tl.custom_minimum_size = Vector2(380, 0)
+		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		row.add_child(tl)
+		row.add_child(_button(">", func(): Net.set_track(Net.track + 1)))
+		row.add_child(_button("LAPS: %d" % Net.laps, func():
+			var k := Net.LAP_CHOICES.find(Net.laps)
+			Net.set_laps(Net.LAP_CHOICES[(k + 1) % Net.LAP_CHOICES.size()])))
+		row.add_child(_button("BOTS: " + ("ON" if Net.bots else "OFF"), func(): Net.set_bots(not Net.bots)))
+	else:
+		row.add_child(_label("TRACK  %s  -  %d LAPS  -  BOTS %s" % [d.name.to_upper(), Net.laps, "ON" if Net.bots else "OFF"], 20, Game.font_title))
+	v.add_child(row)
+	var events: Array = d.get("events", [])
+	var ev_names := []
+	for k in events:
+		ev_names.append(Hazards.KINDS[k].title.to_lower())
+	v.add_child(_label(d.plane + "   -   world events: " + ", ".join(ev_names), 16, null, Color(1, 1, 1, 0.7)))
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 10)
+	if Net.is_host():
+		var go := _button("START RACE", Net.start_race)
+		go.custom_minimum_size = Vector2(220, 50)
+		actions.add_child(go)
+	else:
+		actions.add_child(_label("Waiting for the host to start the race...", 17, null, CYAN))
+	actions.add_child(_button("LEAVE THE ROOM", _leave_room))
+	v.add_child(actions)
+	var status := _label(Net.status, 16, null, GOLD)
+	v.add_child(status)
+	screen.set_meta("status_label", status)
+	if actions.get_child(0) is Button:
+		(actions.get_child(0) as Button).grab_focus()
 
 
 # --- headless simulation test ---------------------------------------------------------

@@ -12,6 +12,7 @@ and generated from code. A fan project, not affiliated with Electronic Arts or W
 
 - **Quick race**: pick one of six tracks and one of eight teams; 3 laps against seven AI racers.
 - **Grand Prix**: all six legs in race order; points 10-8-6-5-4-3-2-1; most points takes the Aetherspark.
+- **Multiplayer**: race friends online, see below.
 
 | Key | Action |
 | --- | --- |
@@ -30,6 +31,24 @@ A gamepad works too (left stick, triggers, A/B/X/Y).
 
 Aether fills from drifting and from the glowing **aether orbs** lined up on the road. Grass, sand
 and run-off slow you down; walls and rails bounce you back.
+
+## Multiplayer
+
+**Multiplayer - friends and bots** on the title screen. Type your name, then:
+
+- **Host a room**: you get a five-letter room code and a **Copy invite link** button. In the room
+  everyone picks a team (each team once), and the host picks the track, the laps (1, 2, 3 or 5) and
+  whether **bots** fill the free seats up to eight cars. The host starts the race.
+- **Join**: type the code from your friend, or just open their invite link (it fills the code in).
+
+Up to eight players. The host's computer runs the bots and the world events; each player drives
+their own car on their own computer, and the cars meet peer to peer (WebRTC), so a race costs no
+server. The rooms are found through the shop page's live channel; nothing is stored. Very strict
+networks (some offices or mobile hotspots) can block direct connections between players; the game
+then says it found the room but could not connect. Esc opens a menu but never pauses an online
+race. If a player leaves mid-race a bot takes over their car; if the host leaves, the room closes.
+
+On a downloaded desktop build the room code is the host's network address (IP), port 24680.
 
 ## World events
 
@@ -81,7 +100,7 @@ once if the first seconds of a race run under 24 fps and nobody chose a level.
 
 | Path | What |
 | --- | --- |
-| `scripts/main.gd` | menus, race flow, Grand Prix, pause, results, quality, headless sim test |
+| `scripts/main.gd` | menus, race flow, Grand Prix, multiplayer room screens, pause, results, quality, sim test |
 | `scripts/game.gd` | `Game` autoload: teams, settings, controls, fonts, materials, generated sounds |
 | `scripts/tracks.gd` | the six track definitions (layout, sky, colours, props, landmarks) |
 | `scripts/track.gd` | builds a track (road, terrain, river, scenery) and answers position queries |
@@ -90,6 +109,9 @@ once if the first seconds of a race run under 24 fps and nobody chose a level.
 | `scripts/car_models.gd` | the eight team car models (smooth lofted bodies, glass cabins, detailed wheels) |
 | `scripts/race.gd` | one race: grid, countdown, collisions, ranking, camera |
 | `scripts/hazards.gd` | world events: what each one does, its visuals, and how the AI reacts |
+| `scripts/net.gd` | `Net` autoload: online rooms, players' cars and events between computers |
+| `scripts/nettest.gd` | automated online test (`tools/net_test.sh`, or `?aenet=` in the browser) |
+| `tools/web/aether-net.js` | browser side of finding a room (WebRTC signalling channel, invite links) |
 | `scripts/hud.gd` | race overlay: place, laps, minimap, speedometer, aether meter |
 | `scripts/showcase.gd` | the turning car on the menu screens |
 | `scripts/mesh_kit.gd` | mesh builder (boxes, cylinders, spheres, rings, smooth lofted shells) |

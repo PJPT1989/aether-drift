@@ -72,6 +72,15 @@ var spin_t := 0.0
 var hop_t := 0.0
 var _spin_rate := 0.0
 
+# online races (Net): a remote car is driven on another machine and follows its messages
+var remote := false
+var peer := 0                 # the player's peer id, 0 for a bot
+var driver := ""              # the player's name, "" for a bot
+var _net_pos := Vector3.ZERO
+var _net_vel := Vector3.ZERO
+var _net_yaw := 0.0
+var _net_age := -1.0
+
 # visuals
 var body: Node3D
 var _wheels: Array[MeshInstance3D] = []
@@ -326,7 +335,7 @@ func step(dt: float, racing: bool, time_now: float) -> void:
 				lap_times.append(lt)
 				best_lap = minf(best_lap, lt)
 			lap_start = time_now
-			if laps_done >= Game.LAPS and not finished:
+			if laps_done >= Game.laps and not finished:
 				finished = true
 				finish_time = time_now
 		s_max = s
@@ -411,6 +420,61 @@ func think(dt: float, others: Array, dangers: Array = []) -> void:
 	boost_input = aether > 0.35 and want > speed + 8.0 and absf(steer) < 0.3
 	# a trickle of aether so AI keeps boosting through a race
 	aether = minf(1.0, aether + dt * 0.02)
+
+
+## This car's state for the other players (Net.STRIDE floats).
+func net_pack() -> PackedFloat32Array:
+	var flags := (1 if boosting else 0) | (2 if drifting else 0) | (4 if finished else 0) | (8 if offroad else 0)
+	return PackedFloat32Array([position.x, position.y, position.z, yaw, vel.x, vel.y, vel.z, speed,
+		total, laps_done, flags, steer, throttle, finish_time, best_lap if best_lap != INF else -1.0,
+		aether, hop_t, spin_t])
+
+
+func net_apply(a: PackedFloat32Array, o: int) -> void:
+	_net_pos = Vector3(a[o], a[o + 1], a[o + 2])
+	_net_yaw = a[o + 3]
+	_net_vel = Vector3(a[o + 4], a[o + 5], a[o + 6])
+	speed = a[o + 7]
+	total = a[o + 8]
+	laps_done = int(a[o + 9])
+	var flags := int(a[o + 10])
+	boosting = flags & 1 != 0
+	drifting = flags & 2 != 0
+	finished = flags & 4 != 0
+	offroad = flags & 8 != 0
+	steer = a[o + 11]
+	throttle = a[o + 12]
+	finish_time = a[o + 13]
+	best_lap = a[o + 14] if a[o + 14] > 0.0 else INF
+	aether = a[o + 15]
+	if a[o + 16] > hop_t + 0.05:
+		hop_t = a[o + 16]
+	spin_t = a[o + 17]
+	# keep the lap bookkeeping current, in case this car has to be driven here later (a bot
+	# takes over when its player leaves)
+	s_prev = total - laps_done * track.length
+	s_max = s_prev
+	if _net_age < 0.0:
+		position = _net_pos
+		yaw = _net_yaw
+	_net_age = 0.0
+
+
+## A remote car glides towards where its last message says it is by now.
+func net_follow(dt: float) -> void:
+	if _net_age < 0.0:
+		_update_visuals(dt)
+		return
+	_net_age += dt
+	var target := _net_pos + _net_vel * minf(_net_age, 0.25)
+	if position.distance_to(target) > 12.0:
+		position = target
+	else:
+		position = position.lerp(target, clampf(dt * 10.0, 0.0, 1.0))
+	yaw = lerp_angle(yaw, _net_yaw, clampf(dt * 12.0, 0.0, 1.0))
+	vel = _net_vel
+	idx = track.locate(position, idx)
+	_update_visuals(dt)
 
 
 func _update_visuals(dt: float) -> void:

@@ -29,6 +29,9 @@ func _shot(name: String) -> void:
 func _run() -> void:
 	await _wait(20)
 	await _shot("00_title")
+	main.show_multiplayer()
+	await _wait(5)
+	await _shot("00_multiplayer")
 	main.show_tracks()
 	await _wait(5)
 	await _shot("01_tracks")

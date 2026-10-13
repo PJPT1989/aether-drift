@@ -19,5 +19,5 @@ mkdir -p "$ROOT/build/web"
 touch "$ROOT/build/.gdignore"
 rm -f "$ROOT"/build/web/*.import
 "$GODOT" --headless --path "$ROOT" --export-release "Web" "$ROOT/build/web/index.html"
-cp "$ROOT/tools/web/.htaccess" "$ROOT/tools/web/HOW-TO-UPLOAD.txt" "$ROOT/build/web/"
+cp "$ROOT/tools/web/.htaccess" "$ROOT/tools/web/HOW-TO-UPLOAD.txt" "$ROOT/tools/web/aether-net.js" "$ROOT/build/web/"
 echo "web build in $ROOT/build/web ($(du -sh "$ROOT/build/web" | cut -f1))"

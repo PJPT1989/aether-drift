@@ -3,13 +3,17 @@ extends Node3D
 ## One race: builds the track, puts eight cars on the grid, runs the countdown, reads the
 ## player's controls, steps every car, handles car-to-car bumps, orbs and the track's world
 ## events (Hazards), follows the player with the camera and reports the results when the player
-## crosses the line on the last lap.
+## crosses the line on the last lap. In an online race (Net) only some cars are driven here: the
+## host drives its own car and the bots, every other player their own car, and the rest follow
+## the other machines' messages.
 
 signal race_over(results: Array)
 
-enum { COUNTDOWN, RACING, FINISHED, DONE }
+enum { COUNTDOWN, RACING, FINISHED, DONE, WAITING }
 const COUNTDOWN_TIME := 3.6
 const CAM_MODES := 2
+## Online: once the first player finishes, the others get this long before the results.
+const NET_FINISH_WAIT := 45.0
 
 var track: Track
 var hazards: Hazards
@@ -31,24 +35,37 @@ var _last_count := 4
 var _ambient: CPUParticles3D
 var _cam_pos := Vector3.ZERO
 var _cam_look := Vector3.ZERO
+var _first_finish := -1.0
 
 
-func setup(t_index: int, team_index: int) -> void:
+## `grid` (online races) lists the cars from pole: {"team", "peer" (0 for a bot), "name"}.
+func setup(t_index: int, team_index: int, grid: Array = []) -> void:
 	track_index = t_index
 	track = Track.new()
 	add_child(track)
 	track.build(Tracks.LIST[t_index])
 	# grid: the player starts fifth of eight
 	var order: Array[int] = []
-	for i in Game.TEAMS.size():
-		if i != team_index:
-			order.append(i)
-	order.shuffle()
-	order.insert(4, team_index)
+	if grid.is_empty():
+		for i in Game.TEAMS.size():
+			if i != team_index:
+				order.append(i)
+		order.shuffle()
+		order.insert(4, team_index)
+	else:
+		for g in grid:
+			order.append(int(g.team))
+		state = WAITING
+		show_message("WAITING FOR PLAYERS", 999.0)
 	for k in order.size():
 		var car := Car.new()
 		add_child(car)
 		var is_player := order[k] == team_index
+		if not grid.is_empty():
+			car.peer = int(grid[k].peer)
+			car.driver = str(grid[k].name)
+			is_player = car.peer == Net.my_id()
+			car.remote = not is_player and not (Net.is_host() and car.peer == 0)
 		car.setup(track, order[k], is_player)
 		car.place_at(-12.0 - k * 8.0, (track.hw * 0.42) * (-1.0 if k % 2 == 0 else 1.0))
 		car.skill = 1.0 if is_player else 0.9 + 0.012 * ((k * 5 + t_index * 3) % 8)
@@ -80,6 +97,23 @@ func apply_quality() -> void:
 	_ambient.emitting = Game.quality != Game.LOW
 
 
+## Online: everyone has loaded, start the countdown.
+func go() -> void:
+	if state == WAITING:
+		state = COUNTDOWN
+		message_t = 0.0
+
+
+## Online (host): a player left mid-race; a bot takes over their car.
+func peer_left(id: int, who: String) -> void:
+	for car in cars:
+		if car.peer == id:
+			car.remote = false
+			car.peer = 0
+			car.driver = ""
+			show_message("%s left - a bot drives on" % who, 3.0)
+
+
 func show_message(text: String, secs := 2.0) -> void:
 	message = text
 	message_t = secs
@@ -91,6 +125,11 @@ func _physics_process(dt: float) -> void:
 
 ## One physics step of the whole race.
 func simulate(dt: float) -> void:
+	if state == WAITING:
+		for car in cars:
+			if car.remote:
+				car.net_follow(dt)
+		return
 	if state == COUNTDOWN:
 		countdown -= dt
 		var c := int(ceil(countdown - 0.6))
@@ -110,11 +149,21 @@ func simulate(dt: float) -> void:
 	_read_player(dt)
 	hazards.update(dt, state == RACING)
 	var dangers := hazards.dangers()
+	var humans := cars.filter(func(c: Car) -> bool: return c == player or c.peer != 0)
 	for car in cars:
+		if car.remote:
+			car.net_follow(dt)
+			if racing:
+				track.collect_orb(car.position, car.idx)
+			continue
 		if car != player or autopilot or player.finished:
 			car.think(dt, cars, dangers)
-			var diff := car.total - player.total
-			car.rubber = clampf(1.0 - diff / 2500.0, 0.93, 1.07) if car != player else 1.0
+			# bots ease off when far ahead of the nearest human and push when far behind
+			var diff := INF
+			for h in humans:
+				if absf(car.total - h.total) < absf(diff):
+					diff = car.total - h.total
+			car.rubber = clampf(1.0 - diff / 2500.0, 0.93, 1.07) if car != player and car.peer == 0 else 1.0
 		var was_laps := car.laps_done
 		if racing:
 			hazards.affect(car, dt)
@@ -122,7 +171,7 @@ func simulate(dt: float) -> void:
 		if car == player:
 			if car.laps_done > was_laps and car.laps_done >= 1 and not car.finished:
 				Game.play("lap", -4.0)
-				show_message("FINAL LAP" if car.laps_done == Game.LAPS - 1 else "LAP %d / %d" % [car.laps_done + 1, Game.LAPS], 2.0)
+				show_message("FINAL LAP" if car.laps_done == Game.laps - 1 else "LAP %d / %d" % [car.laps_done + 1, Game.laps], 2.0)
 			if car.wall_hit > 6.0:
 				Game.play("hit", clampf(-20.0 + car.wall_hit, -14.0, 0.0))
 				shake = maxf(shake, clampf(car.wall_hit / 25.0, 0.1, 0.8))
@@ -135,6 +184,12 @@ func simulate(dt: float) -> void:
 	if state == RACING and player.finished:
 		state = FINISHED
 		show_message("FINISH!  %s" % ordinal(player.place), 4.0)
+	if Net.active():
+		Net.race_tick(self, dt)
+		if Net.is_host() and state != DONE:
+			_net_check_done(dt, humans)
+		message_t -= dt
+		return
 	if state == FINISHED:
 		_after_finish += dt
 		var all_done := true
@@ -144,6 +199,32 @@ func simulate(dt: float) -> void:
 			state = DONE
 			race_over.emit(results())
 	message_t -= dt
+
+
+## Online (host): the race ends when every player is home and the bots too (or a little after),
+## or NET_FINISH_WAIT seconds after the first player finished.
+func _net_check_done(dt: float, humans: Array) -> void:
+	if humans.any(func(c: Car) -> bool: return c.finished):
+		if _first_finish < 0.0:
+			_first_finish = 0.0
+		_first_finish += dt
+	else:
+		return
+	var humans_done := humans.all(func(c: Car) -> bool: return c.finished)
+	if humans_done:
+		_after_finish += dt
+	var all_done := cars.all(func(c: Car) -> bool: return c.finished)
+	if (humans_done and (all_done or _after_finish > 6.0)) or _first_finish > NET_FINISH_WAIT:
+		state = DONE
+		Net.send_results(results())
+
+
+## Online: the host's classification arrived.
+func net_results(res: Array) -> void:
+	state = DONE
+	for r in res:
+		r["player"] = int(r.peer) != 0 and int(r.peer) == Net.my_id()
+	race_over.emit(res)
 
 
 func _read_player(dt: float) -> void:
@@ -177,6 +258,8 @@ func _collide_cars() -> void:
 		for b in range(a + 1, cars.size()):
 			var ca := cars[a]
 			var cb := cars[b]
+			if ca.remote and cb.remote:
+				continue
 			var d := cb.position - ca.position
 			if absf(d.y) > 2.5:
 				continue
@@ -184,14 +267,19 @@ func _collide_cars() -> void:
 			var dist := d.length()
 			if dist < 2.3 and dist > 0.001:
 				var nrm := d / dist
-				var push := (2.3 - dist) * 0.5
-				ca.position -= nrm * push
-				cb.position += nrm * push
+				# a car driven on another machine is moved there; only the local one is pushed here
+				var push := (2.3 - dist) * (1.0 if ca.remote or cb.remote else 0.5)
+				if not ca.remote:
+					ca.position -= nrm * push
+				if not cb.remote:
+					cb.position += nrm * push
 				var rel := (cb.vel - ca.vel).dot(nrm)
 				if rel < 0.0:
 					var imp := -rel * 0.6
-					ca.vel -= nrm * imp
-					cb.vel += nrm * imp
+					if not ca.remote:
+						ca.vel -= nrm * imp
+					if not cb.remote:
+						cb.vel += nrm * imp
 					if ca == player or cb == player:
 						if imp > 2.0:
 							Game.play("hit", clampf(-22.0 + imp * 2.0, -16.0, -2.0), 1.3)
@@ -216,10 +304,11 @@ func results() -> Array:
 	for car in cars:
 		var t := car.finish_time
 		if not car.finished:
-			var left := Game.LAPS * track.length - car.total
+			var left := Game.laps * track.length - car.total
 			var avg := maxf(car.total / maxf(time, 1.0), 30.0)
 			t = time + left / avg
-		out.append({"team": car.team_idx, "name": car.team.name, "time": t, "best": car.best_lap, "player": car == player})
+		out.append({"team": car.team_idx, "name": car.team.name, "time": t, "best": car.best_lap, "player": car == player,
+			"peer": car.peer, "driver": car.driver})
 	out.sort_custom(func(a, b): return a.time < b.time)
 	for i in out.size():
 		out[i]["place"] = i + 1

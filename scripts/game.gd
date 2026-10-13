@@ -13,6 +13,8 @@ const TITLE_BB := "Need for Speed: [s][color=#ff5a7a]Tokyo[/color][/s] Aether Dr
 const TITLE_PLAIN := "Need for Speed: Aether Drift"
 const TAGLINE := "It's time for planeswalkers to learn how to drive a stick, and the importance of family."
 const LAPS := 3
+## Laps in the current race (online rooms can pick another number).
+var laps := LAPS
 
 ## The ten-or-so teams of the multiversal Grand Prix, reimagined with original names and liveries.
 ## style picks the body shape in car_models.gd. Stats are small nudges around 1.0.

@@ -12,6 +12,8 @@ extends Node3D
 ##   walker    one big obstacle crossing the road
 ##   blasts    spots on the road that glow, then go off and throw cars about
 ##   strikes   bolts from the sky that hit random racers
+## Online, the host picks the events and sends kind, place and seed (Net.send_event), so every
+## player builds the same one; each machine applies them to the cars it drives itself.
 
 const KINDS := {
 	"thopter_swarm": {"title": "THOPTER SWARM", "hint": "a flock of thopters dives on the road",
@@ -54,6 +56,7 @@ var banner_t := 0.0
 var fired := 0                  # events so far this race (the sim test reports it)
 var spins := 0                  # cars spun out or stopped by events
 var _next := 0.0
+var rng := RandomNumberGenerator.new()   # seeded per event, so all players build the same one
 var _fog0 := 0.0
 var _strip_mat: StandardMaterial3D
 var _thopter: ArrayMesh
@@ -85,29 +88,39 @@ func trigger(kind := "", focus: Car = null, ahead := -1.0) -> void:
 		if kinds.is_empty():
 			return
 		kind = kinds[randi() % kinds.size()]
-	var k: Dictionary = KINDS[kind]
 	if focus == null:
 		# the player is picked more often than any one rival, so events are felt
 		var live := race.cars.filter(func(c: Car) -> bool: return not c.finished)
 		if live.is_empty():
 			return
-		focus = race.player if randf() < 0.4 and not race.player.finished else live[randi() % live.size()]
+		var humans := live.filter(func(c: Car) -> bool: return c == race.player or c.peer != 0)
+		focus = humans[randi() % humans.size()] if randf() < 0.4 and not humans.is_empty() else live[randi() % live.size()]
 	if ahead < 0.0:
 		ahead = randf_range(170.0, 300.0)
 	var s0 := fposmod(fposmod(focus.total, track.length) + ahead, track.length)
+	var seed_v := randi()
+	start_event(kind, s0, seed_v)
+	Net.send_event(kind, s0, seed_v)
+
+
+## Builds event `kind` starting `s0` metres into the lap; everything random in it comes from
+## `seed_v`, so the same call on another player's machine gives the same event.
+func start_event(kind: String, s0: float, seed_v: int) -> void:
+	var k: Dictionary = KINDS[kind]
+	rng.seed = seed_v
 	var e := {"kind": kind, "def": k, "type": k.type, "t": 0.0, "dur": k.dur, "s0": s0,
 		"idx": track.idx_at(s0), "inside": {}, "nodes": [], "items": []}
 	fired += 1
 	for c in race.cars:
-		c.alert = randf() < AI_NOTICE
+		c.alert = rng.randf() < AI_NOTICE
 	match k.type:
 		"zone":
 			e.len = k.len
-			e.side = (1.0 if randf() < 0.5 else -1.0) if k.get("half", false) else 0.0
+			e.side = (1.0 if rng.randf() < 0.5 else -1.0) if k.get("half", false) else 0.0
 			_zone_visual(e)
 		"global":
 			e.wind = Vector3.ZERO
-			e.dir = 1.0 if randf() < 0.5 else -1.0
+			e.dir = 1.0 if rng.randf() < 0.5 else -1.0
 			_global_visual(e)
 		"obstacles":
 			_drop_logs(e)
@@ -127,7 +140,7 @@ func trigger(kind := "", focus: Car = null, ahead := -1.0) -> void:
 
 func update(dt: float, racing: bool) -> void:
 	banner_t -= dt
-	if racing and not kinds.is_empty():
+	if racing and not kinds.is_empty() and not Net.is_client():
 		_next -= dt
 		if _next <= 0.0 and events.size() < 2:
 			trigger()
@@ -334,13 +347,13 @@ func _zone_visual(e: Dictionary) -> void:
 			for i in 14:
 				var mi := MeshInstance3D.new()
 				mi.mesh = _thopter
-				mi.set_meta("phase", randf() * TAU)
-				mi.set_meta("along", randf() * e.len)
-				mi.set_meta("speed", randf_range(1.5, 2.6))
+				mi.set_meta("phase", rng.randf() * TAU)
+				mi.set_meta("along", rng.randf() * e.len)
+				mi.set_meta("speed", rng.randf_range(1.5, 2.6))
 				add_child(mi)
 				e.nodes.append(mi)
 		"pipe_burst":
-			var side := 1.0 if randf() < 0.5 else -1.0
+			var side := 1.0 if rng.randf() < 0.5 else -1.0
 			var at := track.P[mid] + track.R[mid] * side * (track.limit + 1.0)
 			var jet := Props.particles(60 if Game.quality != Game.LOW else 20, 1.4, Color(0.5, 1.0, 1.0, 0.8), 1.2, 3.0)
 			jet.position = at + Vector3(0, 1.0, 0)
@@ -386,9 +399,9 @@ func _zone_visual(e: Dictionary) -> void:
 			var count := 260 if Game.quality != Game.LOW else 120
 			mm.instance_count = count
 			for i in count:
-				var k2: int = (e.idx + randi() % int(e.len / Track.SPACING)) % track.n
-				var p := track.P[k2] + track.R[k2] * randf_range(-track.hw, track.hw) + Vector3(0, 0.1, 0)
-				mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3.ONE * randf_range(1.0, 2.2)), p))
+				var k2: int = (e.idx + rng.randi() % int(e.len / Track.SPACING)) % track.n
+				var p := track.P[k2] + track.R[k2] * rng.randf_range(-track.hw, track.hw) + Vector3(0, 0.1, 0)
+				mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(1.0, 2.2)), p))
 			var mmi := MultiMeshInstance3D.new()
 			mmi.multimesh = mm
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -409,8 +422,8 @@ func _zone_visual(e: Dictionary) -> void:
 			var dk := MeshKit.new()
 			for i in 7:
 				var k3: int = (e.idx + int((i + 0.5) / 7.0 * e.len / Track.SPACING)) % track.n
-				var p: Vector3 = track.P[k3] + track.R[k3] * e.side * randf_range(2.0, track.hw - 1.0)
-				dk.sphere(p, Vector3(randf_range(2.2, 3.6), randf_range(0.7, 1.1), randf_range(3.5, 5.5)), Color(0.8, 0.55, 0.3).darkened(randf() * 0.12), 10, 4)
+				var p: Vector3 = track.P[k3] + track.R[k3] * e.side * rng.randf_range(2.0, track.hw - 1.0)
+				dk.sphere(p, Vector3(rng.randf_range(2.2, 3.6), rng.randf_range(0.7, 1.1), rng.randf_range(3.5, 5.5)), Color(0.8, 0.55, 0.3).darkened(rng.randf() * 0.12), 10, 4)
 			var dm := MeshInstance3D.new()
 			dm.mesh = dk.commit()
 			add_child(dm)
@@ -455,21 +468,21 @@ func _drop_logs(e: Dictionary) -> void:
 		_log = lk.commit()
 	var span := 140.0
 	for i in e.def.count:
-		var s: float = e.s0 + span * (i + randf_range(0.1, 0.9)) / e.def.count
+		var s: float = e.s0 + span * (i + rng.randf_range(0.1, 0.9)) / e.def.count
 		var k := track.idx_at(s)
 		# each log lies across one side of the road, leaving the other side open
-		var lat := (1.0 if randf() < 0.5 else -1.0) * randf_range(1.5, maxf(track.hw - 2.5, 1.6))
+		var lat := (1.0 if rng.randf() < 0.5 else -1.0) * rng.randf_range(1.5, maxf(track.hw - 2.5, 1.6))
 		var pos := track.P[k] + track.R[k] * lat
 		var mi := MeshInstance3D.new()
 		mi.mesh = _log
-		mi.basis = Basis.looking_at(track.T[k], Vector3.UP).rotated(Vector3.UP, randf_range(-0.5, 0.5))
+		mi.basis = Basis.looking_at(track.T[k], Vector3.UP).rotated(Vector3.UP, rng.randf_range(-0.5, 0.5))
 		mi.position = pos + Vector3(0, 30.0, 0)
 		add_child(mi)
 		e.nodes.append(mi)
 		# a log is about 5 m long: three overlapping circles along it
 		var across := mi.basis.x
 		for o: float in [-1.0, 0.0, 1.0]:
-			e.items.append({"pos": pos + across * o, "live": false, "node": mi, "drop": randf_range(0.0, 1.2), "ground": pos, "idx": k})
+			e.items.append({"pos": pos + across * o, "live": false, "node": mi, "drop": rng.randf_range(0.0, 1.2), "ground": pos, "idx": k})
 
 
 func _animate_logs(e: Dictionary, _dt: float) -> void:
@@ -513,7 +526,7 @@ func _walker(e: Dictionary) -> void:
 	mi.scale = Vector3.ONE * 1.4
 	add_child(mi)
 	e.nodes.append(mi)
-	e.side = 1.0 if randf() < 0.5 else -1.0
+	e.side = 1.0 if rng.randf() < 0.5 else -1.0
 	var start: Vector3 = track.P[e.idx] + track.R[e.idx] * e.side * (track.limit + 3.0)
 	mi.position = start
 	e.items.append({"pos": start, "live": true, "node": mi, "idx": e.idx})
@@ -535,9 +548,9 @@ func _move_walker(e: Dictionary, _dt: float) -> void:
 func _blasts(e: Dictionary) -> void:
 	var span := 160.0
 	for i in e.def.count:
-		var s: float = e.s0 + span * (i + randf_range(0.1, 0.9)) / e.def.count
+		var s: float = e.s0 + span * (i + rng.randf_range(0.1, 0.9)) / e.def.count
 		var k := track.idx_at(s)
-		var pos := track.P[k] + track.R[k] * randf_range(-track.hw + 2.5, track.hw - 2.5)
+		var pos := track.P[k] + track.R[k] * rng.randf_range(-track.hw + 2.5, track.hw - 2.5)
 		var rk := MeshKit.new()
 		rk.ring(Vector3.ZERO, Vector3.UP, e.def.radius, 0.18, e.def.color, 28, 3, true)
 		rk.ring(Vector3.ZERO, Vector3.UP, e.def.radius * 0.5, 0.12, e.def.color, 20, 3, true)
@@ -567,7 +580,7 @@ func _blasts(e: Dictionary) -> void:
 			burst.color_ramp = g
 		add_child(burst)
 		e.nodes.append(burst)
-		e.items.append({"pos": pos, "fuse": randf_range(2.0, e.dur - 1.5), "ring": ring, "burst": burst, "done": false})
+		e.items.append({"pos": pos, "fuse": rng.randf_range(2.0, e.dur - 1.5), "ring": ring, "burst": burst, "done": false})
 
 
 func _tick_blasts(e: Dictionary, _dt: float) -> void:
@@ -588,6 +601,8 @@ func _tick_blasts(e: Dictionary, _dt: float) -> void:
 				Game.play("boom", clampf(-2.0 - close * 0.12, -20.0, -2.0))
 				race.shake = maxf(race.shake, clampf(0.7 - close / 100.0, 0.0, 0.7))
 			for car in race.cars:
+				if car.remote:
+					continue
 				var d: Vector3 = car.position - it.pos
 				d.y = 0.0
 				if d.length() < e.def.radius + 1.0:
@@ -597,6 +612,8 @@ func _tick_blasts(e: Dictionary, _dt: float) -> void:
 
 
 func _tick_strikes(e: Dictionary, dt: float) -> void:
+	if Net.is_client():
+		return
 	e.next_strike -= dt
 	if e.next_strike > 0.0 or e.left <= 0:
 		return
@@ -606,6 +623,14 @@ func _tick_strikes(e: Dictionary, dt: float) -> void:
 	if live.is_empty():
 		return
 	var car: Car = live[randi() % live.size()]
+	if Net.active():
+		Net.send_strike(race.cars.find(car))
+	else:
+		strike_car(car)
+
+
+## A bolt hits `car` (on every machine online; only the machine driving it spins it).
+func strike_car(car: Car) -> void:
 	var top := car.position + Vector3(randf_range(-8, 8), 60.0, randf_range(-8, 8))
 	var bk := MeshKit.new()
 	var a := top
@@ -619,13 +644,13 @@ func _tick_strikes(e: Dictionary, dt: float) -> void:
 	bolt.mesh = bk.commit()
 	bolt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(bolt)
-	e.nodes.append(bolt)
 	var tw := create_tween()
 	tw.tween_interval(0.25)
-	tw.tween_callback(bolt.hide)
-	car.aether = 0.0
+	tw.tween_callback(bolt.queue_free)
 	car.hop_t = 0.4
-	_spin(car, 0.8)
+	if not car.remote:
+		car.aether = 0.0
+		_spin(car, 0.8)
 	var close := car.position.distance_to(race.camera.global_position)
 	if close < 150.0:
 		Game.play("boom", clampf(-4.0 - close * 0.1, -20.0, -4.0), 1.5)

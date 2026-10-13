@@ -61,3 +61,20 @@ gusts, obstacles, blasts and lightning that spin a car once round. AI drivers no
 60% of the time per event (and always after hitting one), so results vary from race to race.
 Sim test: every car still finishes every track; about 5-8 events and 2-16 spins per race.
 Also fixed: the HUD's minimap, speedometer and aether meter never showed (the HUD had zero size).
+
+## 5. Multiplayer with friends and bots (2026-10-13)
+> I want to adjust the game now, I want there to be multiplayer option so that this can be played
+> with friends and bots
+
+Online rooms (`scripts/net.gd`): a player hosts a room (five-letter code and invite link), friends
+join, everyone picks a team, the host picks track, laps and whether bots fill the grid, up to eight
+players. Each player's car is simulated on their own computer and sent 20 times a second; the host
+runs the bots, the world events (sent as kind + place + seed, so every player builds the same
+event) and the results. In the browser the players connect peer to peer with WebRTC; the shop
+page's Supabase Realtime channel only carries the connection handshake (`tools/web/aether-net.js`
+batches it). On desktop the same code runs over ENet with the host's IP as the code.
+Decided without asking: online play rather than split screen on one keyboard (the game lives on a
+website, and "friends" usually means each at their own computer); no TURN relay server, so very
+strict networks may not connect.
+Tests: `tools/net_test.sh` (two Godot processes race a lap and must agree on the results) and two
+headless Chromium tabs joining a room through the web build.
