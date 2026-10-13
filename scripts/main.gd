@@ -403,6 +403,11 @@ func start_race(t_index: int, team_index: int, grid: Array = []) -> void:
 	sel_track = t_index
 	sel_team = team_index
 	_new_screen()
+	# opaque, so the event warm-up below draws unseen
+	var cover := ColorRect.new()
+	cover.color = RenderingServer.get_default_clear_color()
+	cover.set_anchors_preset(Control.PRESET_FULL_RECT)
+	screen.add_child(cover)
 	var d: Dictionary = Tracks.LIST[t_index]
 	var v := _box(Control.PRESET_CENTER_LEFT, Vector2(60, -60))
 	v.add_child(_label(d.leg.to_upper(), 18, Game.font_title, CYAN))
@@ -427,6 +432,7 @@ func start_race(t_index: int, team_index: int, grid: Array = []) -> void:
 	race.race_over.connect(_on_race_over)
 	if not grid.is_empty():
 		Net.race = race
+	await race.hazards.warm_up()
 	print("track %d built in %d ms" % [t_index, Time.get_ticks_msec() - t0])
 	_new_screen()
 	hud = Hud.new()

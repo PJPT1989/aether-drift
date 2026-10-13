@@ -78,3 +78,14 @@ website, and "friends" usually means each at their own computer); no TURN relay 
 strict networks may not connect.
 Tests: `tools/net_test.sh` (two Godot processes race a lap and must agree on the results) and two
 headless Chromium tabs joining a room through the web build.
+
+Fixes after playtesting:
+> enemy racers feel like im driving trhough them, when i should be coliding with them
+
+Cars collided as 2.3 m circles while the bodies are 4.6 m long, so nose-to-tail and diagonal hits
+overlapped deeply first. They now collide as boxes turned with each car (`Race._collide_cars`).
+> just before world event is announced, game stutters for few seconds
+
+Setting off an event takes a few milliseconds; the freeze was the renderer compiling shaders for
+event objects the first time they were drawn (slow in browsers). `Hazards.warm_up` now builds every
+event of the track once behind the loading screen, so that happens before the race.

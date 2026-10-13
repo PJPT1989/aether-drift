@@ -105,7 +105,7 @@ func trigger(kind := "", focus: Car = null, ahead := -1.0) -> void:
 
 ## Builds event `kind` starting `s0` metres into the lap; everything random in it comes from
 ## `seed_v`, so the same call on another player's machine gives the same event.
-func start_event(kind: String, s0: float, seed_v: int) -> void:
+func start_event(kind: String, s0: float, seed_v: int, quiet := false) -> Dictionary:
 	var k: Dictionary = KINDS[kind]
 	rng.seed = seed_v
 	var e := {"kind": kind, "def": k, "type": k.type, "t": 0.0, "dur": k.dur, "s0": s0,
@@ -131,11 +131,43 @@ func start_event(kind: String, s0: float, seed_v: int) -> void:
 		"strikes":
 			e.next_strike = 1.2
 			e.left = k.count
+	if quiet:
+		fired -= 1
+		return e
 	events.append(e)
 	banner = k.title
 	banner_hint = k.hint
 	banner_t = 3.2
 	Game.play("alarm", -6.0)
+	return e
+
+
+## Builds each of the track's events once in front of the camera, lets two frames draw them and
+## throws them away. The renderer compiles the shaders a new kind of object needs the first time
+## it is drawn, which in the browser froze the race for a few seconds the moment an event
+## appeared; this way it happens behind the loading screen.
+func warm_up() -> void:
+	var cam := race.camera
+	var front := cam.global_position - cam.global_basis.z * 14.0
+	var s0 := fposmod(fposmod(race.player.total, track.length) + 20.0, track.length)
+	var nodes: Array = []
+	for kind: String in kinds:
+		var e := start_event(kind, s0, randi(), true)
+		if e.type == "strikes":
+			var bolt := _bolt(race.player.position)
+			add_child(bolt)
+			e.nodes.append(bolt)
+		nodes.append_array(e.nodes)
+	for n: Node3D in nodes:
+		# meshes built in world space (road strips, sand, beetles, the bolt) are already in view
+		if n.position != Vector3.ZERO or n.has_meta("phase"):
+			n.global_position = front
+		if n is CPUParticles3D:
+			n.emitting = true
+	for i in 2:
+		await RenderingServer.frame_post_draw
+	for n: Node3D in nodes:
+		n.queue_free()
 
 
 func update(dt: float, racing: bool) -> void:
@@ -631,18 +663,7 @@ func _tick_strikes(e: Dictionary, dt: float) -> void:
 
 ## A bolt hits `car` (on every machine online; only the machine driving it spins it).
 func strike_car(car: Car) -> void:
-	var top := car.position + Vector3(randf_range(-8, 8), 60.0, randf_range(-8, 8))
-	var bk := MeshKit.new()
-	var a := top
-	for i in 8:
-		var b := top.lerp(car.position + Vector3(0, 1, 0), (i + 1) / 8.0)
-		if i < 7:
-			b += Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5))
-		bk.cyl(a, b, 0.35, 0.3, Color(0.7, 0.95, 1.0), 6, true)
-		a = b
-	var bolt := MeshInstance3D.new()
-	bolt.mesh = bk.commit()
-	bolt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var bolt := _bolt(car.position)
 	add_child(bolt)
 	var tw := create_tween()
 	tw.tween_interval(0.25)
@@ -654,3 +675,20 @@ func strike_car(car: Car) -> void:
 	var close := car.position.distance_to(race.camera.global_position)
 	if close < 150.0:
 		Game.play("boom", clampf(-4.0 - close * 0.1, -20.0, -4.0), 1.5)
+
+
+## A jagged bolt from the sky down to `at`.
+func _bolt(at: Vector3) -> MeshInstance3D:
+	var top := at + Vector3(randf_range(-8, 8), 60.0, randf_range(-8, 8))
+	var bk := MeshKit.new()
+	var a := top
+	for i in 8:
+		var b := top.lerp(at + Vector3(0, 1, 0), (i + 1) / 8.0)
+		if i < 7:
+			b += Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5))
+		bk.cyl(a, b, 0.35, 0.3, Color(0.7, 0.95, 1.0), 6, true)
+		a = b
+	var bolt := MeshInstance3D.new()
+	bolt.mesh = bk.commit()
+	bolt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return bolt

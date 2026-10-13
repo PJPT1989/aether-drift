@@ -11,6 +11,7 @@ var _started := false
 var _shot_t := -1.0
 var _shots := ""
 var _race_shots := 0
+var _fired := 0
 
 
 func _ready() -> void:
@@ -71,6 +72,9 @@ func _process(dt: float) -> void:
 	var r: Race = main.race
 	if r and Net.test_flag("bot") != "":
 		r.autopilot = true
+	if r and r.hazards.fired != _fired:
+		_fired = r.hazards.fired
+		_say("event %s" % r.hazards.banner)
 	if r and r.state == Race.RACING:
 		_shot_t += dt
 		if _race_shots < 2 and _shot_t > 12.0 + _race_shots * 25.0:
