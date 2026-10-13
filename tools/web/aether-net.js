@@ -8,7 +8,8 @@
 //
 // URL parameters, read from the game's own address or the page around it:
 //   room=CODE   an invite link: open the multiplayer screen with this code filled in
-//   aenet=...   automated tests (see scripts/nettest.gd), only from the game's own address
+//   aenet=...   automated tests (see scripts/nettest.gd), only from the game's own address; they
+//               use the local channel unless the list contains "sig"
 (function () {
   function outer() {
     try { if (window.parent !== window && window.parent.location.href) return window.parent; } catch (e) {}
@@ -39,7 +40,8 @@
       };
       const page = outer();
       const signal = page && page.AetherSignal;
-      if (signal && !param("aenet", true)) {
+      const test = param("aenet", true);
+      if (signal && (!test || /(^|,)sig(,|$)/.test(test))) {
         this.ch = signal.open(room, deliver);
         this.kind = "online";
       } else {
