@@ -135,8 +135,10 @@ func host() -> void:
 		code = ""
 		for i in 5:
 			code += CODE_CHARS[randi() % CODE_CHARS.length()]
-		if test_flag("host") != "1":
-			code = test_flag("host")
+		# automated tests can fix the code (host=CODE); a real host keeps the random one
+		var fixed := test_flag("host")
+		if fixed != "" and fixed != "1":
+			code = fixed
 		var p := WebRTCMultiplayerPeer.new()
 		p.create_server()
 		_peer = p
