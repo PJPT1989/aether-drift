@@ -72,6 +72,19 @@ func _run() -> void:
 		r.camera.look_at_from_position(p.position + side * 38.0 - p.forward() * 30.0 + Vector3(0, 14, 0), p.position + p.forward() * 20.0, Vector3.UP)
 		await _wait(4)
 		await _shot("t%d_side" % t)
+		# each indoor stretch: its mouth from outside, then from inside
+		for q in r.track.indoor.size():
+			var st: Dictionary = r.track.indoor[q]
+			var tr := r.track
+			var a: int = (st.i0 - 28 + tr.n) % tr.n
+			r.camera.look_at_from_position(tr.P[a] + tr.R[a] * 3.0 + Vector3(0, 5, 0), tr.P[st.i0 + 4] + Vector3(0, 4, 0), Vector3.UP)
+			await _wait(4)
+			await _shot("t%d_indoor%d_mouth" % [t, q])
+			var m: int = (st.i0 + st.i1) / 2
+			r.camera.look_at_from_position(tr.P[m] + Vector3(0, 3.0, 0), tr.P[m + 12] + Vector3(0, 2.5, 0), Vector3.UP)
+			await _wait(4)
+			await _shot("t%d_indoor%d_inside" % [t, q])
+			print("AUTOTEST indoor %s on track %d: %d m" % [st.kind, t, (st.i1 - st.i0) * Track.SPACING])
 		r.free_cam = false
 		main.hud.visible = true
 		# each of the track's world events, set off on the road just ahead of the player

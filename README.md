@@ -70,14 +70,18 @@ A car caught by a blast, a bolt or a slick spins once round and loses most of it
 
 ## The tracks (race order)
 
-| # | Track | Plane | Look |
-| --- | --- | --- | --- |
-| 1 | Ghirapur Nightfall | Avishkar | night city, copper towers, aether pipes over the street, a spire with rings, thopters |
-| 2 | The Inventors' Outskirts | Avishkar | dawn countryside, coloured terraced fields, curling trees, windmills, aether pipelines |
-| 3 | Banks of the Living River | Amonkhet | green river valley, palms, reeds, obelisks, lion-headed guardian statues, pyramids, grandstands |
-| 4 | Primordial Canopy | Muraganda | elevated wooden track above the jungle, giant trees, geysers, volcano, long-necked beasts, shattered moon |
-| 5 | The Broken Sands | Amonkhet | dunes, ruins and fallen statues, mesas, a tomb of ancient kings |
-| 6 | Heart of Ghirapur | Avishkar | night finale, grandstands, fireworks, the Aetherspark trophy |
+| # | Track | Plane | Length | Look | Indoors |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Ghirapur Nightfall | Avishkar | 3.6 km | night city streets with square corners and two hairpins, copper towers, aether pipes over the street, a spire with rings, thopters | an aether foundry hall lit by furnaces |
+| 2 | The Inventors' Outskirts | Avishkar | 3.7 km | dawn countryside with fast esses and a hairpin climb, coloured terraced fields, curling trees, windmills, aether pipelines | a lantern-lit cave through a hill |
+| 3 | Banks of the Living River | Amonkhet | 3.7 km | green river valley with chicanes and a hairpin, palms, reeds, obelisks, guardian statues, pyramids, grandstands | a temple of columns and braziers |
+| 4 | Primordial Canopy | Muraganda | 3.5 km | twisting elevated wooden track above the jungle, giant trees, geysers, volcano, long-necked beasts, shattered moon | the bore of a hollow giant log, glowing with fungus |
+| 5 | The Broken Sands | Amonkhet | 4.6 km | fast desert sweepers and a long hairpin, dunes, ruins and fallen statues, mesas, a tomb of ancient kings | a royal tomb cut into the rock |
+| 6 | Heart of Ghirapur | Avishkar | 3.5 km | technical night finale, hairpins and chicanes, grandstands, fireworks, the Aetherspark trophy | an aether conduit tunnel |
+
+A lap takes a little over a minute. Each track has one indoor stretch with its own light: the sky
+light dims, the fog and colours change as you drive in and back out. World events never start
+indoors, and gusts and lightning cannot reach you there. The minimap shows indoor stretches darker.
 
 Tracks 1-5 begin by driving out of a portal ring (the plane-to-plane gates of the story).
 
@@ -102,8 +106,9 @@ once if the first seconds of a race run under 24 fps and nobody chose a level.
 | --- | --- |
 | `scripts/main.gd` | menus, race flow, Grand Prix, multiplayer room screens, pause, results, quality, sim test |
 | `scripts/game.gd` | `Game` autoload: teams, settings, controls, fonts, materials, generated sounds |
-| `scripts/tracks.gd` | the six track definitions (layout, sky, colours, props, landmarks) |
-| `scripts/track.gd` | builds a track (road, terrain, river, scenery) and answers position queries |
+| `scripts/tracks.gd` | the six track definitions (layout as a drive of straights and bends, heights, indoor stretches, sky, colours, props, landmarks) |
+| `scripts/track.gd` | builds a track (road, terrain, river, indoor stretches, scenery), answers position queries, changes the light indoors |
+| `tools/track_check.py` | checks the layouts without Godot (length, tightest bend, clearances) and draws a map of each |
 | `scripts/props.gd` | scenery, arches and landmarks made from primitives |
 | `scripts/car.gd` | driving physics, drift and boost, lap counting, AI driver |
 | `scripts/car_models.gd` | the eight team car models (smooth lofted bodies, glass cabins, detailed wheels) |

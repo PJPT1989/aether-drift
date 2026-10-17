@@ -107,6 +107,14 @@ func _draw_map(at: Vector2) -> void:
 		pts.append(c + q)
 	draw_polyline(pts, Color(0, 0, 0, 0.6), 7.0, true)
 	draw_polyline(pts, Color(1, 1, 1, 0.75), 3.0, true)
+	# indoor stretches as dotted, darker line
+	for st: Dictionary in race.track.indoor:
+		var seg := PackedVector2Array()
+		for i in range(st.i0, st.i1 + 1, 4):
+			var p := race.track.P[i]
+			seg.append(c + (Vector2(p.x, p.z) - _map_origin) * _map_scale)
+		if seg.size() > 1:
+			draw_polyline(seg, Color(0.35, 0.3, 0.3, 1.0), 3.0, true)
 	var s := race.track.P[0]
 	draw_circle(c + (Vector2(s.x, s.z) - _map_origin) * _map_scale, 4.0, GOLD)
 	for car in race.cars:

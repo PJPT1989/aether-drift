@@ -33,9 +33,12 @@ Sister project: `PJPT1989/ashen-depths` (same tooling). The web build is publish
 - Car bodies are stations `[z, half width, bottom, top, top width factor, squareness]` lofted by
   `CarModels._shell`. Check cars with `xvfb-run -a godot --path . --rendering-driver opengl3 -- --lineup`
   (screenshots in `/tmp/aether-cars`).
-- Track layouts are control points in `tracks.gd`, smoothed with Catmull-Rom and stretched by
-  `Track.STRETCH`. Cars do not use the physics engine: they slide on the centre line samples
-  (`Track.locate/lateral/road_y`), with walls at `Track.limit`.
+- Track layouts in `tracks.gd` are drives: `["S", metres]` straights and `["L"/"R", radius, degrees]`
+  bends from the start line (turns add up to 360; a small end gap is spread over the lap), plus
+  "heights" keys and "indoor" stretches (`Track.INDOOR` styles, own light via `Track.update_view`).
+  `python3 tools/track_check.py` checks a layout (length, tightest bend, clearance between parts of
+  the lap, river) and draws maps without Godot. Cars do not use the physics engine: they slide on
+  the centre line samples (`Track.locate/lateral/road_y`), with walls at `Track.limit`.
 - World events (`scripts/hazards.gd`, `Hazards.KINDS`): each track lists two kinds in `Tracks.LIST`
   "events". `Race.simulate` calls `hazards.update` once per step and `hazards.affect(car)` before each
   `car.step`; events act through `Car.fx_grip/fx_top/fx_push`, `Car.spin_out()` and `hop_t`. The AI

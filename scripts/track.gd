@@ -7,8 +7,26 @@ extends Node3D
 
 const SPACING := 2.0          # metres between centre-line samples
 const CURB := 1.3             # curb width beyond the road edge
-const STRETCH := 1.3          # horizontal scale applied to the layouts in tracks.gd
 const ORB_RESPAWN := 8.0
+## Indoor stretches (Tracks.LIST "indoor"): how each looks and the light inside. shape "hall" is
+## a built tunnel with flat walls and ribs, "cave" a rough rock (or wood) bore. outside "rock"
+## wraps it in a lumpy hill, "block" in a building, "log" in a hollow trunk (elevated track).
+const INDOOR := {
+	"foundry": {"shape": "hall", "outside": "block", "wall": Color(0.26, 0.2, 0.19), "trim": Color(0.78, 0.45, 0.22),
+		"lamp": Color(1.0, 0.5, 0.15), "ambient": Color(0.8, 0.55, 0.45), "ambient_energy": 0.6, "fog": Color(0.35, 0.15, 0.08), "fog_density": 0.012, "sun": 0.1},
+	"cave": {"shape": "cave", "outside": "rock", "wall": Color(0.42, 0.36, 0.3), "trim": Color(0.45, 0.32, 0.2),
+		"lamp": Color(1.0, 0.75, 0.4), "ambient": Color(0.85, 0.72, 0.6), "ambient_energy": 0.8, "fog": Color(0.2, 0.16, 0.12), "fog_density": 0.01, "sun": 0.1},
+	"temple": {"shape": "hall", "outside": "block", "wall": Color(0.72, 0.6, 0.42), "trim": Color(0.95, 0.75, 0.3),
+		"lamp": Color(1.0, 0.6, 0.25), "ambient": Color(0.85, 0.65, 0.45), "ambient_energy": 0.5, "fog": Color(0.4, 0.3, 0.2), "fog_density": 0.008, "sun": 0.15},
+	"hollow": {"shape": "cave", "outside": "log", "wall": Color(0.36, 0.25, 0.15), "trim": Color(0.25, 0.18, 0.1),
+		"lamp": Color(0.5, 1.0, 0.45), "ambient": Color(0.55, 0.8, 0.5), "ambient_energy": 0.75, "fog": Color(0.1, 0.2, 0.08), "fog_density": 0.012, "sun": 0.1},
+	"tomb": {"shape": "hall", "outside": "rock", "wall": Color(0.62, 0.45, 0.3), "trim": Color(0.95, 0.75, 0.3),
+		"lamp": Color(0.35, 0.6, 1.0), "ambient": Color(0.7, 0.68, 0.8), "ambient_energy": 0.8, "fog": Color(0.12, 0.12, 0.2), "fog_density": 0.01, "sun": 0.1},
+	"conduit": {"shape": "hall", "outside": "block", "wall": Color(0.16, 0.15, 0.2), "trim": Color(0.85, 0.66, 0.3),
+		"lamp": Color(0.35, 0.9, 1.0), "ambient": Color(0.35, 0.6, 0.9), "ambient_energy": 0.6, "fog": Color(0.05, 0.15, 0.25), "fog_density": 0.01, "sun": 0.1},
+}
+## Metres over which the light changes at a tunnel mouth.
+const INDOOR_FADE := 30.0
 
 var def: Dictionary
 var night := false
@@ -39,6 +57,11 @@ var _flyers: Array = []         # [node, centre, radius, height, speed, phase]
 var _fireworks: Array[CPUParticles3D] = []
 var _firework_t := 0.0
 var orbs: Array = []            # [idx, position, respawn_timer]
+var indoor: Array = []          # {kind, def, i0, i1} per indoor stretch
+var inside := PackedFloat32Array()   # per sample: 0 outdoors, 1 under a roof (eased at the mouths)
+var _inside_of := PackedInt32Array() # per sample: which indoor stretch is nearest (-1 none)
+var fog_mul := 1.0              # set by world events (sandstorm)
+var _view_i := 0
 var _orb_mm: MultiMesh
 var _t := 0.0
 
@@ -62,10 +85,12 @@ func build(track_def: Dictionary) -> void:
 	_river = PackedVector3Array(def.get("river", []))
 	_river_w = def.get("river_width", 0.0)
 	_build_line()
+	_mark_indoor()
 	_build_grid()
 	_build_environment()
 	_build_road()
 	_build_edges()
+	_build_indoor()
 	_build_terrain()
 	if _river.size() > 1:
 		_build_river()
@@ -86,22 +111,36 @@ func build(track_def: Dictionary) -> void:
 # --- the racing line --------------------------------------------------------------
 
 func _build_line() -> void:
-	# layouts are drawn small in tracks.gd and stretched here so a lap takes about 40 seconds
-	var cp: Array = []
-	for q: Vector3 in def.points:
-		cp.append(Vector3(q.x * STRETCH, q.y, q.z * STRETCH))
-	var m := cp.size()
+	# drive the layout a metre at a time
 	var dense := PackedVector3Array()
-	for i in m:
-		var p0: Vector3 = cp[(i - 1 + m) % m]
-		var p1: Vector3 = cp[i]
-		var p2: Vector3 = cp[(i + 1) % m]
-		var p3: Vector3 = cp[(i + 2) % m]
-		for k in 40:
-			var t := k / 40.0
-			var t2 := t * t
-			var t3 := t2 * t
-			dense.append(0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3))
+	var pos := Vector3.ZERO
+	var head := 0.0
+	dense.append(pos)
+	for c: Array in def.layout:
+		if c[0] == "S":
+			var k := maxi(1, ceili(c[1]))
+			for q in k:
+				pos += Vector3(cos(head), 0, -sin(head)) * (c[1] / k)
+				dense.append(pos)
+		else:
+			var ang := deg_to_rad(c[2]) * (1.0 if c[0] == "L" else -1.0)
+			var arc: float = c[1] * absf(ang)
+			var k := maxi(1, ceili(arc))
+			for q in k:
+				head += ang / k * 0.5
+				pos += Vector3(cos(head), 0, -sin(head)) * (arc / k)
+				head += ang / k * 0.5
+				dense.append(pos)
+	# close the loop: spread the gap between the end and the start over the lap, then add heights
+	var cum := PackedFloat32Array([0.0])
+	for i in range(1, dense.size()):
+		cum.append(cum[i - 1] + dense[i - 1].distance_to(dense[i]))
+	var gap := dense[dense.size() - 1]
+	var lap := cum[cum.size() - 1]
+	dense.resize(dense.size() - 1)
+	for i in dense.size():
+		var f := cum[i] / lap
+		dense[i] = dense[i] - gap * f + Vector3(0, _height_at(f), 0)
 	# resample at even spacing
 	var total := 0.0
 	for i in dense.size():
@@ -154,6 +193,22 @@ func nearest(x: float, z: float, reach := 120.0) -> Array:
 						best = d
 						bi = i
 	return [sqrt(best), bi]
+
+
+## Road height at fraction `f` of the lap from the track's "heights" keys, eased between them.
+func _height_at(f: float) -> float:
+	var keys: Array = def.heights
+	var m := keys.size()
+	for q in m:
+		var a: Array = keys[q]
+		var b: Array = keys[(q + 1) % m]
+		var fa: float = a[0]
+		var fb: float = b[0] + (1.0 if q == m - 1 else 0.0)
+		var ff := f if f >= fa else f + 1.0
+		if ff >= fa and ff <= fb:
+			var t := (ff - fa) / maxf(fb - fa, 0.0001)
+			return lerpf(a[1], b[1], (1.0 - cos(t * PI)) * 0.5)
+	return keys[0][1]
 
 
 ## Sample index nearest to `pos`, searching around the previous index `hint` (so bridges and
@@ -559,6 +614,232 @@ func _sweep(k: MeshKit, s: float, prof: PackedVector2Array, col: Color, step: in
 		prevn = curn
 
 
+# --- indoor stretches --------------------------------------------------------------
+
+func _mark_indoor() -> void:
+	inside.resize(n)
+	_inside_of.resize(n)
+	_inside_of.fill(-1)
+	var fade := int(INDOOR_FADE / SPACING)
+	for spec: Array in def.get("indoor", []):
+		var i0 := idx_at(float(spec[1]) * length)
+		var i1 := idx_at(float(spec[2]) * length)
+		indoor.append({"kind": spec[0], "def": INDOOR[spec[0]], "i0": i0, "i1": i1})
+		# the light starts to change a little before the mouth and is fully inside soon after it
+		for k in range(i0 - fade, i1 + fade + 1):
+			var i := (k + n) % n
+			var f := smoothstep(float(i0 - fade), float(i0 + fade * 0.5), float(k)) * (1.0 - smoothstep(float(i1 - fade * 0.5), float(i1 + fade), float(k)))
+			if f >= inside[i]:
+				inside[i] = f
+				_inside_of[i] = indoor.size() - 1
+
+
+## True if sample i is under a roof (props, arches and events keep out).
+func is_indoor(i: int, margin := 0) -> bool:
+	for st: Dictionary in indoor:
+		if i >= st.i0 - margin and i <= st.i1 + margin:
+			return true
+	return false
+
+
+## Called every frame with the camera position: blends the sky light, fog and sun towards the
+## indoor stretch's own light as the camera goes in.
+func update_view(cam: Vector3) -> void:
+	var nr := nearest(cam.x, cam.z, 60.0)
+	_view_i = locate(cam, nr[1] if nr[1] >= 0 else _view_i)
+	var f := inside[_view_i]
+	var amb: Color = def.ambient
+	var amb_e: float = def.ambient_energy
+	var fog: Color = def.fog
+	var fog_d: float = def.fog_density
+	var sun_e: float = def.sun_energy
+	if f > 0.0:
+		var d: Dictionary = indoor[_inside_of[_view_i]].def
+		amb = amb.lerp(d.ambient, f)
+		amb_e = lerpf(amb_e, d.ambient_energy, f)
+		fog = fog.lerp(d.fog, f)
+		fog_d = lerpf(fog_d, d.fog_density, f)
+		sun_e = lerpf(sun_e, sun_e * d.sun, f)
+	env.ambient_light_color = amb
+	env.ambient_light_energy = amb_e
+	env.fog_light_color = fog
+	env.fog_density = fog_d * fog_mul
+	sun.light_energy = sun_e
+
+
+func _build_indoor() -> void:
+	for st: Dictionary in indoor:
+		var k := MeshKit.new()
+		var d: Dictionary = st.def
+		var rings: Array[int] = []
+		var i: int = st.i0
+		while i < st.i1:
+			rings.append(i)
+			i += 2
+		rings.append(st.i1)
+		var w := limit + 1.0
+		var inner := _hall_profile(w, false) if d.shape == "hall" else _cave_profile(w, false)
+		var outer: PackedVector2Array
+		match d.outside:
+			"rock": outer = _cave_profile(w + 14.0, true)
+			"log": outer = _cave_profile(w + 3.0, true, true)
+			_: outer = _hall_profile(w, true)
+		var rough: bool = d.shape == "cave"
+		# inner walls and roof, outer shell, both mouths
+		_shell(k, rings, inner, d.wall, true, 0.18 if rough else 0.0, 7)
+		_shell(k, rings, outer, d.wall.darkened(0.15) if d.outside != "rock" else _rock_col(), false, 0.3 if d.outside != "block" else 0.0, 8)
+		for end in [rings[0], rings[rings.size() - 1]]:
+			_mouth(k, end, inner, outer, 0.18 if rough else 0.0, 0.3 if d.outside != "block" else 0.0, d.trim if not rough else d.wall.darkened(0.3), end == rings[0])
+		# a floor from the curbs to the walls
+		for q in rings.size() - 1:
+			var a: int = rings[q]
+			var b: int = rings[q + 1]
+			for sd: float in [-1.0, 1.0]:
+				Props.quad_f(k, P[a] + R[a] * sd * (hw + CURB) + Vector3(0, 0.03, 0), P[b] + R[b] * sd * (hw + CURB) + Vector3(0, 0.03, 0),
+					P[b] + R[b] * sd * (w + 0.5) + Vector3(0, 0.03, 0), P[a] + R[a] * sd * (w + 0.5) + Vector3(0, 0.03, 0), Vector3.UP, d.wall.darkened(0.45))
+		_indoor_details(k, st, w)
+		var mi := MeshInstance3D.new()
+		mi.mesh = k.commit()
+		add_child(mi)
+
+
+func _rock_col() -> Color:
+	var cols: Array = def.ground
+	return (cols[0] as Color).lerp(Color(0.45, 0.4, 0.36), 0.75).darkened(0.3)
+
+
+## Cross-section of a built hall from the right foot round to the left foot (x outward, y up).
+func _hall_profile(w: float, outside: bool) -> PackedVector2Array:
+	var t := 1.6 if outside else 0.0
+	var pts := PackedVector2Array([Vector2(w + t, -0.3 - t * 2.0), Vector2(w + t, 4.0), Vector2(w + t, 8.0 + t * 0.5),
+		Vector2(w - 1.8 + t, 10.2 + t), Vector2(w * 0.5, 11.6 + t), Vector2(0, 12.0 + t)])
+	for q in range(pts.size() - 2, -1, -1):
+		pts.append(Vector2(-pts[q].x, pts[q].y))
+	return pts
+
+
+## Cross-section of a rough bore (or, with `outside`, the hill or trunk round it).
+func _cave_profile(w: float, outside: bool, log_shell := false) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	var h := 10.5 + (w - limit) * (0.4 if not log_shell else 1.0)
+	var segs := 12
+	for q in segs + 1:
+		var a := PI * q / segs
+		pts.append(Vector2(cos(a) * w, -0.4 + sin(a) * h))
+	if outside:
+		# the hill runs down into the ground; the trunk closes under the deck
+		var foot := -9.0 if not log_shell else -3.5
+		pts.insert(0, Vector2(w * (1.15 if not log_shell else 0.9), foot))
+		pts.append(Vector2(-w * (1.15 if not log_shell else 0.9), foot))
+	return pts
+
+
+## Pseudo-random bump (-1..1) for rough surfaces, fixed per place.
+func _bump(p: Vector3, q: int) -> float:
+	return _noise2.get_noise_3d(p.x * 3.0, p.z * 3.0, q * 37.0)
+
+
+func _ring(i: int, prof: PackedVector2Array, rough: float) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	for q in prof.size():
+		var v := prof[q]
+		var b := 1.0 + _bump(P[i], q) * rough if q > 0 and q < prof.size() - 1 else 1.0
+		out.append(P[i] + R[i] * v.x * b + Vector3(0, v.y * b, 0))
+	return out
+
+
+## Sweeps a cross-section along the samples in `rings`; `inward` faces it towards the road.
+func _shell(k: MeshKit, rings: Array[int], prof: PackedVector2Array, col: Color, inward: bool, rough: float, shade_every: int) -> void:
+	var prev := _ring(rings[0], prof, rough)
+	for r in range(1, rings.size()):
+		var i: int = rings[r]
+		var cur := _ring(i, prof, rough)
+		var mid := P[i] + Vector3(0, 5.0, 0)
+		for q in prof.size() - 1:
+			var c := (prev[q] + cur[q + 1]) * 0.5
+			var face := (mid - c) if inward else (c - mid)
+			var tone := col.darkened(0.1 * float((q + int(r / float(shade_every))) % 3)) if rough > 0.0 else col.darkened(0.06 * float(q % 2))
+			Props.quad_f(k, prev[q], cur[q], cur[q + 1], prev[q + 1], face, tone)
+		prev = cur
+
+
+## The wall face at a tunnel mouth, between the inner bore and the outer shell: the two outlines
+## are walked together by how far round each one is.
+func _mouth(k: MeshKit, i: int, inner: PackedVector2Array, outer: PackedVector2Array, ri: float, ro: float, col: Color, entry: bool) -> void:
+	var a := _ring(i, inner, ri)
+	var b := _ring(i, outer, ro)
+	var face := -T[i] if entry else T[i]
+	var na := a.size() - 1
+	var nb := b.size() - 1
+	var p := 0
+	var q := 0
+	while p < na or q < nb:
+		var ta := float(p + 1) / na if p < na else 9.0
+		var tb := float(q + 1) / nb if q < nb else 9.0
+		if ta <= tb:
+			Props.tri_n(k, a[p], a[p + 1], b[q], face, face, face, col)
+			p += 1
+		else:
+			Props.tri_n(k, a[p], b[q + 1], b[q], face, face, face, col)
+			q += 1
+
+
+## Ribs, pillars, lamps and the like inside each kind of indoor stretch.
+func _indoor_details(k: MeshKit, st: Dictionary, w: float) -> void:
+	var d: Dictionary = st.def
+	var kind: String = st.kind
+	var lamp: Color = d.lamp
+	var every := 7 if d.shape == "hall" else 9
+	var cnt := 0
+	for i in range(st.i0 + 3, st.i1 - 2, every):
+		cnt += 1
+		var yaw := atan2(R[i].x, R[i].z)
+		var up := Vector3.UP
+		for sd: float in [-1.0, 1.0]:
+			var wall := P[i] + R[i] * sd * (w - 0.35)
+			match kind:
+				"temple":
+					k.cyl(wall + R[i] * sd * -0.6, wall + R[i] * sd * -0.6 + up * 9.6, 0.75, 0.65, d.wall.lightened(0.1), 10)
+					k.box(wall + R[i] * sd * -0.6 + up * 9.8, Vector3(1.9, 0.5, 1.9), d.trim, false, yaw)
+					if cnt % 2 == 0:
+						k.cyl(wall + R[i] * sd * -2.2, wall + R[i] * sd * -2.2 + up * 1.4, 0.35, 0.5, d.trim.darkened(0.3), 8)
+						k.sphere(wall + R[i] * sd * -2.2 + up * 1.7, Vector3(0.45, 0.6, 0.45), lamp, 6, 4, true)
+				"foundry":
+					k.box(wall + up * 4.5, Vector3(0.7, 9.0, 0.7), d.trim.darkened(0.25), false, yaw)
+					if cnt % 3 == 1:
+						k.box(wall + R[i] * sd * 0.25 + up * 2.6, Vector3(0.1, 3.2, 4.5), lamp, true, yaw)
+					k.cyl(wall + R[i] * sd * -0.5 + up * 6.6 - T[i] * SPACING * every * 0.5, wall + R[i] * sd * -0.5 + up * 6.6 + T[i] * SPACING * every * 0.5, 0.45, 0.45, d.trim, 10, false, true, false)
+				"conduit":
+					k.box(wall + up * 4.5, Vector3(0.6, 9.0, 0.9), d.trim.darkened(0.2), false, yaw)
+					k.box(wall + R[i] * sd * 0.2 + up * 1.2, Vector3(0.12, 0.25, SPACING * every - 1.0), lamp, true, yaw)
+				"tomb":
+					k.box(wall + up * 4.5, Vector3(1.4, 9.0, 1.4), d.wall.darkened(0.15), false, yaw)
+					k.box(wall + R[i] * sd * -0.75 + up * 6.8, Vector3(0.15, 0.3, 1.0), d.trim, false, yaw)
+					k.sphere(wall + R[i] * sd * -0.9 + up * 4.2, Vector3(0.45, 0.65, 0.45), lamp, 6, 4, true)
+					k.box(wall + R[i] * sd * -0.75 + up * 2.0, Vector3(0.12, 0.25, SPACING * every - 2.0), d.trim, true, yaw)
+				"cave":
+					k.cyl(wall + R[i] * sd * -0.6 + up * 3.6, wall + R[i] * sd * -0.6 + up * 4.8, 0.2, 0.2, d.trim, 6)
+					k.sphere(wall + R[i] * sd * -0.6 + up * 4.2, Vector3(0.45, 0.6, 0.45), lamp, 6, 4, true)
+					k.box(wall + R[i] * sd * -0.5 + up * 3.0, Vector3(0.45, 6.0, 0.45), d.trim, false, yaw)
+				"hollow":
+					var r := _bump(P[i], int(sd * 3.0))
+					k.sphere(wall + R[i] * sd * -0.6 + up * (2.5 + r * 2.0), Vector3(0.5, 0.25, 0.5) * (1.0 + absf(r)), lamp, 6, 3, true)
+		match kind:
+			"cave":
+				k.box(P[i] + up * 11.0, Vector3((w - 0.5) * 2.0, 0.45, 0.45), d.trim, false, yaw)
+			"foundry", "tomb":
+				k.box(P[i] + up * 11.2, Vector3((w - 1.5) * 2.0, 0.6, 0.7), d.trim.darkened(0.2), false, yaw)
+			"temple":
+				k.box(P[i] + up * 11.3, Vector3((w - 1.5) * 2.0, 0.5, 0.9), d.trim, false, yaw)
+			"conduit":
+				k.box(P[i] + up * 11.0, Vector3((w - 1.5) * 2.0, 0.5, 0.6), d.trim.darkened(0.3), false, yaw)
+	# continuous lights along the roof
+	if kind in ["conduit", "foundry", "tomb"]:
+		for i in range(st.i0, st.i1, 2):
+			var j := mini(i + 2, st.i1)
+			k.cyl(P[i] + Vector3(0, 11.4, 0), P[j] + Vector3(0, 11.4, 0), 0.22, 0.22, d.lamp, 6, true, true, false)
+
+
 # --- terrain ---------------------------------------------------------------------
 
 func _base_height(x: float, z: float) -> float:
@@ -796,8 +1077,11 @@ func _build_start_gantry() -> void:
 # --- scenery ---------------------------------------------------------------------
 
 func _place_ok(pos: Vector3, rad: float) -> bool:
-	var nr := nearest(pos.x, pos.z, rad + limit + 4.0)
+	var nr := nearest(pos.x, pos.z, rad + limit + 24.0)
 	if nr[1] >= 0 and nr[0] < limit + rad + 1.0:
+		return false
+	# keep clear of the hills and buildings over indoor stretches
+	if nr[1] >= 0 and nr[0] < limit + rad + 22.0 and is_indoor(nr[1], 6):
 		return false
 	if _river.size() > 1 and _river_dist(pos.x, pos.z) < _river_w * 0.5 + rad + 2.0:
 		return false
@@ -900,6 +1184,9 @@ func _build_arches() -> void:
 	var pos := 90.0
 	while pos < length - 60.0:
 		var i := idx_at(pos)
+		if is_indoor(i, 12):
+			pos += 40.0
+			continue
 		var mi := MeshInstance3D.new()
 		mi.mesh = mesh
 		mi.transform = Transform3D(Basis(R[i], Vector3.UP, R[i].cross(Vector3.UP)), P[i])
@@ -936,7 +1223,12 @@ func _build_landmarks() -> void:
 			_build_pipeline(i, side, dist)
 			continue
 		var node := Props.landmark(kind, sc, night)
+		if kind == "stands":
+			while is_indoor(i, 30):
+				i = (i + 20) % n
 		var pos := P[i] + R[i] * side * (limit + dist)
+		if kind not in ["moonrocks", "stands"]:
+			pos = _clear_spot(i, side, dist, _radius(node) * sc + (40.0 if kind == "dino" else 0.0))
 		if kind == "moonrocks":
 			pos = Vector3.ZERO
 		elif elevated:
@@ -958,6 +1250,34 @@ func _build_landmarks() -> void:
 			_spin.append(spin)
 		if kind == "dino":
 			_dinos.append([node, node.position, T[i] * (1.0 if randf() < 0.5 else -1.0), randf() * TAU])
+
+
+## Where a landmark of radius `rad` can stand beside sample i: `dist` metres out, or further out
+## (then the other side) until it is clear of every part of the road and the indoor stretches.
+func _clear_spot(i: int, side: float, dist: float, rad: float) -> Vector3:
+	for sd: float in [side, -side]:
+		var d := maxf(dist, rad * 0.8)
+		for attempt in 16:
+			var pos := P[i] + R[i] * sd * (limit + d)
+			var nr := nearest(pos.x, pos.z, limit + rad + 30.0)
+			if nr[1] < 0 or (nr[0] > limit + rad * 0.8 + 4.0 and not (nr[0] < limit + rad + 22.0 and is_indoor(nr[1], 6))):
+				return pos
+			d += 30.0
+	return P[i] + R[i] * side * (limit + dist)
+
+
+## Horizontal reach of a node's meshes from its origin (before its own scale).
+func _radius(node: Node3D) -> float:
+	var r := 0.0
+	for c in node.get_children():
+		if c is MeshInstance3D and c.mesh:
+			var bb: AABB = c.transform * c.mesh.get_aabb()
+			for x: float in [bb.position.x, bb.end.x]:
+				for z: float in [bb.position.z, bb.end.z]:
+					r = maxf(r, Vector2(x, z).length())
+		if c is Node3D:
+			r = maxf(r, _radius(c) * c.scale.x)
+	return r
 
 
 func _build_pipeline(i0: int, side: float, dist: float) -> void:

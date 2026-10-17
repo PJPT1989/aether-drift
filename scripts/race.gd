@@ -369,7 +369,10 @@ func _snap_camera() -> void:
 
 
 func _process(dt: float) -> void:
-	if player == null or free_cam:
+	if player == null:
+		return
+	if free_cam:
+		track.update_view(camera.global_position)
 		return
 	var t := _cam_target()
 	var k := clampf(dt * 7.0, 0.0, 1.0)
@@ -387,3 +390,4 @@ func _process(dt: float) -> void:
 	var spd := clampf(player.speed / Car.TOP_SPEED, 0.0, 1.3)
 	camera.fov = lerpf(camera.fov, 68.0 + spd * 14.0 + (8.0 if player.boosting else 0.0), clampf(dt * 3.0, 0.0, 1.0))
 	_ambient.position = camera.position + (-camera.basis.z) * 20.0
+	track.update_view(camera.global_position)

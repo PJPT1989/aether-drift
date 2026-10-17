@@ -89,3 +89,18 @@ overlapped deeply first. They now collide as boxes turned with each car (`Race._
 Setting off an event takes a few milliseconds; the freeze was the renderer compiling shaders for
 event objects the first time they were drawn (slow in browsers). `Hazards.warm_up` now builds every
 event of the track once behind the loading screen, so that happens before the race.
+
+## 6. Longer, twistier tracks with indoor stretches (2026-10-17)
+> ok, now make the tracks longer and more "complicated" (more curves etc..), also you can introduce
+> slight changes in environment during one track, for example that one part will be "indoor"
+> (for example in cave etc...)
+
+All six tracks redrawn as drives of straights and bends (`"layout"` in `tracks.gd`), replacing the
+smoothed control points: 3.5-4.6 km instead of 2.1-3.1 km, hairpins, chicanes and esses, laps a
+little over a minute. `tools/track_check.py` checks layouts and draws maps. Each track has one
+indoor stretch with its own look and light: Ghirapur's aether foundry, a cave through the
+Outskirts hill, a temple on the river, a hollow giant log on the Canopy, a royal tomb in the Broken
+Sands and an aether conduit under the Heart of Ghirapur. Driving in blends the ambient light, fog
+and sun towards the stretch's own; world events, scenery and arches stay out, gusts and lightning
+cannot reach cars inside. Minimap shows indoor stretches darker.
+Decided without asking: one indoor stretch per track, laps stay at 3 by default.

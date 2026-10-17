@@ -57,7 +57,6 @@ var fired := 0                  # events so far this race (the sim test reports 
 var spins := 0                  # cars spun out or stopped by events
 var _next := 0.0
 var rng := RandomNumberGenerator.new()   # seeded per event, so all players build the same one
-var _fog0 := 0.0
 var _strip_mat: StandardMaterial3D
 var _thopter: ArrayMesh
 var _log: ArrayMesh
@@ -69,7 +68,6 @@ func setup(r: Race) -> void:
 	track = r.track
 	kinds = track.def.get("events", [])
 	_next = randf_range(FIRST_EVENT.x, FIRST_EVENT.y)
-	_fog0 = track.env.fog_density
 
 
 ## Ends every event at once (the smoke test uses it to show one event at a time).
@@ -79,7 +77,7 @@ func clear() -> void:
 			if is_instance_valid(n):
 				n.queue_free()
 	events.clear()
-	track.env.fog_density = _fog0
+	track.fog_mul = 1.0
 
 
 ## Starts an event now. `kind` empty picks one of the track's; `focus` is the car it lands ahead of.
@@ -97,10 +95,23 @@ func trigger(kind := "", focus: Car = null, ahead := -1.0) -> void:
 		focus = humans[randi() % humans.size()] if randf() < 0.4 and not humans.is_empty() else live[randi() % live.size()]
 	if ahead < 0.0:
 		ahead = randf_range(170.0, 300.0)
-	var s0 := fposmod(fposmod(focus.total, track.length) + ahead, track.length)
+	var s0 := _clear_of_indoor(fposmod(fposmod(focus.total, track.length) + ahead, track.length), 170.0)
 	var seed_v := randi()
 	start_event(kind, s0, seed_v)
 	Net.send_event(kind, s0, seed_v)
+
+
+## `s0`, moved past any indoor stretch that the `span` metres after it would reach.
+func _clear_of_indoor(s0: float, span: float) -> float:
+	for st: Dictionary in track.indoor:
+		var x := 0.0
+		while x <= span:
+			var i := track.idx_at(s0 + x)
+			if i >= st.i0 - 15 and i <= st.i1 + 15:
+				s0 = fposmod(track.S[st.i1] + 45.0, track.length)
+				break
+			x += 10.0
+	return s0
 
 
 ## Builds event `kind` starting `s0` metres into the lap; everything random in it comes from
@@ -201,7 +212,7 @@ func update(dt: float, racing: bool) -> void:
 				if is_instance_valid(n):
 					n.queue_free()
 			events.erase(e)
-	track.env.fog_density = _fog0 * fog_mul
+	track.fog_mul = fog_mul
 
 
 func _fade(e: Dictionary) -> float:
@@ -233,6 +244,8 @@ func affect(car: Car, dt: float) -> void:
 				elif e.inside.has(car) and d > e.len + 20.0:
 					e.inside.erase(car)
 			"global":
+				if track.inside[car.idx] > 0.5:
+					continue
 				car.fx_grip *= lerpf(1.0, e.def.grip, _fade(e))
 				car.fx_push += track.R[car.idx] * e.wind
 			"obstacles", "walker":
@@ -651,7 +664,7 @@ func _tick_strikes(e: Dictionary, dt: float) -> void:
 		return
 	e.left -= 1
 	e.next_strike = randf_range(0.5, 1.1)
-	var live := race.cars.filter(func(c: Car) -> bool: return not c.finished and c.spin_t <= 0.0)
+	var live := race.cars.filter(func(c: Car) -> bool: return not c.finished and c.spin_t <= 0.0 and track.inside[c.idx] < 0.5)
 	if live.is_empty():
 		return
 	var car: Car = live[randi() % live.size()]
