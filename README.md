@@ -36,10 +36,10 @@ and run-off slow you down; walls and rails bounce you back.
 
 **Multiplayer - friends and bots** on the title screen. Type your name, then:
 
-- **Host a room**: you get a five-letter room code with **Copy code** and **Copy link** buttons. In the room
+- **Host a room**: you get a five-letter room code and a **Copy code** button. In the room
   everyone picks a team (each team once), and the host picks the track, the laps (1, 2, 3 or 5) and
   whether **bots** fill the free seats up to eight cars. The host starts the race.
-- **Join**: type the code from your friend, or just open their invite link (it fills the code in).
+- **Join**: type the code from your friend.
 
 Up to eight players. The host's computer runs the bots and the world events; each player drives
 their own car on their own computer, and the cars meet peer to peer (WebRTC), so a race costs no

@@ -69,18 +69,10 @@
     },
     roomFromUrl() { return param("room", false).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8); },
     testArgs() { return param("aenet", true); },
-    inviteLink(code) {
-      const w = outer() || window;
-      const u = new URL(w.location.href);
-      u.search = "";
-      u.hash = "";
-      u.searchParams.set("room", code);
-      return u.toString();
-    },
     copy(text) {
       const w = outer() || window;
-      if (w.navigator.clipboard) w.navigator.clipboard.writeText(text).catch(() => w.prompt("Copy the invite link:", text));
-      else w.prompt("Copy the invite link:", text);
+      if (w.navigator.clipboard) w.navigator.clipboard.writeText(text).catch(() => w.prompt("Copy the room code:", text));
+      else w.prompt("Copy the room code:", text);
     },
   };
   window.AetherNet = net;

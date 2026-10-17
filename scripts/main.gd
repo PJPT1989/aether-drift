@@ -643,7 +643,7 @@ func show_multiplayer(msg := "") -> void:
 	var v := _box(Control.PRESET_TOP_LEFT, Vector2(60, 46))
 	v.add_child(_label("MULTIPLAYER", 38, Game.font_title, CYAN))
 	var about := _label("Race your friends online, with bots filling the other seats if you like. One of you hosts a room "
-		+ "and sends the others its code or invite link; up to eight players.", 18, null, Color(1, 1, 1, 0.85))
+		+ "and sends the others its code; up to eight players.", 18, null, Color(1, 1, 1, 0.85))
 	about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	about.custom_minimum_size = Vector2(760, 0)
 	v.add_child(about)
@@ -711,10 +711,6 @@ func show_lobby() -> void:
 	head.add_child(_button("COPY CODE" if Game.web else "COPY ADDRESS", func():
 		Net.copy_invite()
 		Net._set_status("Code copied - send it to your friends.")))
-	if Game.web:
-		head.add_child(_button("COPY LINK", func():
-			Net.copy_invite(true)
-			Net._set_status("Invite link copied - opening it joins the room.")))
 	v.add_child(head)
 	# players
 	var list := PanelContainer.new()

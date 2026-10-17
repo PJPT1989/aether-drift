@@ -91,14 +91,10 @@ func invite_code() -> String:
 	return str(_js.roomFromUrl()) if _js else ""
 
 
-func invite_link() -> String:
-	return str(_js.inviteLink(code)) if _js else code
-
-
-## Copies the room code, or in the browser with `link` the whole invite link.
-func copy_invite(link := false) -> void:
+## Copies the room code (friends type it on the multiplayer screen).
+func copy_invite() -> void:
 	if _js:
-		_js.copy(invite_link() if link else code)
+		_js.copy(code)
 	else:
 		DisplayServer.clipboard_set(code)
 
