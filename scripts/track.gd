@@ -8,6 +8,10 @@ extends Node3D
 const SPACING := 2.0          # metres between centre-line samples
 const CURB := 1.3             # curb width beyond the road edge
 const ORB_RESPAWN := 8.0
+const CHUNK := 150            # samples per piece of road, curbs and rails (culled separately)
+const ROAD_VIEW := 2200.0     # metres: pieces of road and scenery further away are not drawn
+const PROP_VIEW := 1500.0
+const PROP_CELL := 400.0      # scenery is batched per square of this size
 ## Indoor stretches (Tracks.LIST "indoor"): how each looks and the light inside. shape "hall" is
 ## a built tunnel with flat walls and ribs, "cave" a rough rock (or wood) bore. outside "rock"
 ## wraps it in a lumpy hill, "block" in a building, "log" in a hollow trunk (elevated track).
@@ -481,56 +485,65 @@ static func _hash01(a: float, b: float) -> float:
 	return fposmod(sin(a * 12.9898 + b * 78.233) * 43758.5453, 1.0)
 
 
+## Sample ranges [from, to) of the pieces long meshes are cut into, so the camera can skip the
+## pieces out of view.
+func _chunks() -> Array:
+	var out := []
+	for c in range(0, n, CHUNK):
+		out.append([c, mini(c + CHUNK, n)])
+	return out
+
+
+func _add_piece(mesh: Mesh, view: float, mat: Material = null) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.visibility_range_end = view
+	if mat:
+		mi.material_override = mat
+	add_child(mi)
+	return mi
+
+
 func _build_road() -> void:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for i in n + 1:
-		var k := i % n
-		var v := (S[k] if i < n else length) / 10.0
-		var up := Vector3(0, 0.06, 0)
-		st.set_normal(Vector3.UP)
-		st.set_uv(Vector2(0, v))
-		st.add_vertex(P[k] - R[k] * hw + up)
-		st.set_normal(Vector3.UP)
-		st.set_uv(Vector2(1, v))
-		st.add_vertex(P[k] + R[k] * hw + up)
-	for i in n:
-		var a := i * 2
-		# quad a(left), a+1(right), a+3(right next), a+2(left next); clockwise from above
-		st.add_index(a)
-		st.add_index(a + 2)
-		st.add_index(a + 1)
-		st.add_index(a + 1)
-		st.add_index(a + 2)
-		st.add_index(a + 3)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_texture = _road_texture()
 	mat.roughness = 0.55 if night else 0.85
 	mat.metallic_specular = 0.6 if night else 0.3
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	var mi := MeshInstance3D.new()
-	mi.mesh = st.commit()
-	mi.material_override = mat
-	add_child(mi)
+	for ch: Array in _chunks():
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for i in range(ch[0], ch[1] + 1):
+			var k := i % n
+			var v := (S[k] if i < n else length) / 10.0
+			var up := Vector3(0, 0.06, 0)
+			st.set_normal(Vector3.UP)
+			st.set_uv(Vector2(0, v))
+			st.add_vertex(P[k] - R[k] * hw + up)
+			st.set_normal(Vector3.UP)
+			st.set_uv(Vector2(1, v))
+			st.add_vertex(P[k] + R[k] * hw + up)
+		for q in ch[1] - ch[0]:
+			var a: int = q * 2
+			# quad a(left), a+1(right), a+3(right next), a+2(left next); clockwise from above
+			st.add_index(a)
+			st.add_index(a + 2)
+			st.add_index(a + 1)
+			st.add_index(a + 1)
+			st.add_index(a + 2)
+			st.add_index(a + 3)
+		_add_piece(st.commit(), ROAD_VIEW, mat)
 	# curbs: alternating colour blocks with a rounded, raised profile (outward offset, height)
-	var k := MeshKit.new()
 	var ca: Color = def.curb[0]
 	var cb: Color = def.curb[1]
 	var prof := [Vector2(0.0, 0.065), Vector2(0.12, 0.12), Vector2(0.32, 0.15), Vector2(CURB - 0.32, 0.15), Vector2(CURB - 0.1, 0.09), Vector2(CURB, 0.02)]
-	for i in n:
-		var j := (i + 1) % n
-		var col := ca if (i / 2) % 2 == 0 else cb
-		for s: float in [-1.0, 1.0]:
-			for q in prof.size() - 1:
-				var pa: Vector2 = prof[q]
-				var pb: Vector2 = prof[q + 1]
-				var a0 := P[i] + R[i] * s * (hw + pa.x) + Vector3(0, pa.y, 0)
-				var a1 := P[j] + R[j] * s * (hw + pa.x) + Vector3(0, pa.y, 0)
-				var b0 := P[i] + R[i] * s * (hw + pb.x) + Vector3(0, pb.y, 0)
-				var b1 := P[j] + R[j] * s * (hw + pb.x) + Vector3(0, pb.y, 0)
-				var shade := col.lightened(0.06) if q == 2 else (col if q % 2 == 1 else col.darkened(0.12))
-				Props.quad_f(k, a0, b0, b1, a1, Vector3.UP, shade)
+	for ch: Array in _chunks():
+		var k := MeshKit.new()
+		for i in range(ch[0], ch[1]):
+			_curb_piece(k, i, prof, ca, cb)
+		_add_piece(k.commit(), ROAD_VIEW)
 	# chequered start line
+	var k := MeshKit.new()
 	for c in 8:
 		for row in 2:
 			var u0 := -hw + c * (hw * 2.0 / 8.0)
@@ -544,35 +557,53 @@ func _build_road() -> void:
 	add_child(cm)
 
 
+func _curb_piece(k: MeshKit, i: int, prof: Array, ca: Color, cb: Color) -> void:
+	var j := (i + 1) % n
+	var col := ca if (i / 2) % 2 == 0 else cb
+	for s: float in [-1.0, 1.0]:
+		for q in prof.size() - 1:
+			var pa: Vector2 = prof[q]
+			var pb: Vector2 = prof[q + 1]
+			var a0 := P[i] + R[i] * s * (hw + pa.x) + Vector3(0, pa.y, 0)
+			var a1 := P[j] + R[j] * s * (hw + pa.x) + Vector3(0, pa.y, 0)
+			var b0 := P[i] + R[i] * s * (hw + pb.x) + Vector3(0, pb.y, 0)
+			var b1 := P[j] + R[j] * s * (hw + pb.x) + Vector3(0, pb.y, 0)
+			var shade := col.lightened(0.06) if q == 2 else (col if q % 2 == 1 else col.darkened(0.12))
+			Props.quad_f(k, a0, b0, b1, a1, Vector3.UP, shade)
+
+
 func _build_edges() -> void:
 	var kind: String = def.edge
 	if kind == "none":
 		return
-	var k := MeshKit.new()
 	var glow := kind == "glowrail"
 	var post := Color(0.3, 0.25, 0.25) if not elevated else Color(0.35, 0.26, 0.18)
 	var gcol: Color = def.line_col
-	for s: float in [-1.0, 1.0]:
+	for ch: Array in _chunks():
+		var k := MeshKit.new()
+		for s: float in [-1.0, 1.0]:
+			_edge_piece(k, s, ch[0], ch[1], glow, post, gcol)
+		_add_piece(k.commit(), ROAD_VIEW)
+
+
+func _edge_piece(k: MeshKit, s: float, i0: int, i1: int, glow: bool, post: Color, gcol: Color) -> void:
+	if glow:
+		# copper tube rail, a flat lower bar and an aether strip on top
+		_sweep(k, s, _circle(Vector2(0.0, 0.92), 0.11, 8), Props.COPPER, 3, i0, i1)
+		_sweep(k, s, PackedVector2Array([Vector2(-0.04, 0.42), Vector2(0.04, 0.42), Vector2(0.05, 0.56), Vector2(0.04, 0.7), Vector2(-0.04, 0.7), Vector2(-0.05, 0.56)]), Props.COPPER.darkened(0.3), 3, i0, i1)
+		_sweep(k, s, _circle(Vector2(0.0, 1.1), 0.055, 5), gcol, 3, i0, i1, true)
+	else:
+		# a rounded crash barrier on posts
+		_sweep(k, s, PackedVector2Array([Vector2(-0.05, 0.5), Vector2(0.06, 0.53), Vector2(0.11, 0.62), Vector2(0.07, 0.72), Vector2(0.11, 0.83), Vector2(0.06, 0.92), Vector2(-0.05, 0.95), Vector2(-0.08, 0.72)]), Color(0.75, 0.72, 0.7), 3, i0, i1)
+	for i in range(i0, i1, 6):
+		var a := P[i] + R[i] * s * (limit + 0.18)
 		if glow:
-			# copper tube rail, a flat lower bar and an aether strip on top
-			_sweep(k, s, _circle(Vector2(0.0, 0.92), 0.11, 8), Props.COPPER, 3)
-			_sweep(k, s, PackedVector2Array([Vector2(-0.04, 0.42), Vector2(0.04, 0.42), Vector2(0.05, 0.56), Vector2(0.04, 0.7), Vector2(-0.04, 0.7), Vector2(-0.05, 0.56)]), Props.COPPER.darkened(0.3), 3)
-			_sweep(k, s, _circle(Vector2(0.0, 1.1), 0.055, 5), gcol, 3, true)
+			k.cyl(a + Vector3(0, -0.1, 0), a + Vector3(0, 1.0, 0), 0.09, 0.08, post, 8, false, true, false)
+			k.sphere(a + Vector3(0, 1.1, 0), Vector3(0.13, 0.13, 0.13), Props.BRASS, 8, 4)
 		else:
-			# a rounded crash barrier on posts
-			_sweep(k, s, PackedVector2Array([Vector2(-0.05, 0.5), Vector2(0.06, 0.53), Vector2(0.11, 0.62), Vector2(0.07, 0.72), Vector2(0.11, 0.83), Vector2(0.06, 0.92), Vector2(-0.05, 0.95), Vector2(-0.08, 0.72)]), Color(0.75, 0.72, 0.7), 3)
-		for i in range(0, n, 6):
-			var a := P[i] + R[i] * s * (limit + 0.18)
-			if glow:
-				k.cyl(a + Vector3(0, -0.1, 0), a + Vector3(0, 1.0, 0), 0.09, 0.08, post, 8, false, true, false)
-				k.sphere(a + Vector3(0, 1.1, 0), Vector3(0.13, 0.13, 0.13), Props.BRASS, 8, 4)
-			else:
-				var yaw := atan2(R[i].x, R[i].z)
-				k.box(a + Vector3(0, 0.45, 0), Vector3(0.2, 1.1, 0.2), post, false, yaw)
-				k.taper(a + Vector3(0, 1.0, 0), Vector2(0.28, 0.28), Vector2(0.04, 0.04), 0.18, Props.BRASS.darkened(0.2), false, yaw)
-	var mi := MeshInstance3D.new()
-	mi.mesh = k.commit()
-	add_child(mi)
+			var yaw := atan2(R[i].x, R[i].z)
+			k.box(a + Vector3(0, 0.45, 0), Vector3(0.2, 1.1, 0.2), post, false, yaw)
+			k.taper(a + Vector3(0, 1.0, 0), Vector2(0.28, 0.28), Vector2(0.04, 0.04), 0.18, Props.BRASS.darkened(0.2), false, yaw)
 
 
 ## Points round a circle in the (outward, height) plane, for `_sweep`.
@@ -585,15 +616,16 @@ func _circle(c: Vector2, r: float, segs: int) -> PackedVector2Array:
 
 
 ## Extrudes the closed profile `prof` (x: outward from the wall line, y: height) along side `s`
-## of the track, a section every `step` samples. Normals point away from the profile's centre.
-func _sweep(k: MeshKit, s: float, prof: PackedVector2Array, col: Color, step: int, glow := false) -> void:
+## of the track from sample i0 to i1, a section every `step` samples. Normals point away from the
+## profile's centre.
+func _sweep(k: MeshKit, s: float, prof: PackedVector2Array, col: Color, step: int, i0: int, i1: int, glow := false) -> void:
 	var cen := Vector2.ZERO
 	for p in prof:
 		cen += p
 	cen /= prof.size()
 	var m := prof.size()
-	var idxs: Array = range(0, n, step)
-	idxs.append(0)
+	var idxs: Array = range(i0, i1, step)
+	idxs.append(i1 % n)
 	var prev := PackedVector3Array()
 	var prevn := PackedVector3Array()
 	for ii in idxs.size():
@@ -885,7 +917,8 @@ func _build_terrain() -> void:
 		hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.z))
 	lo -= Vector2(900, 900)
 	hi += Vector2(900, 900)
-	var res := 150 if Game.quality != Game.LOW else 110
+	# about 30 m between terrain points (40 m on Low)
+	var res := clampi(int(maxf(hi.x - lo.x, hi.y - lo.y) / (30.0 if Game.quality != Game.LOW else 40.0)), 110, 230)
 	var step := (hi - lo) / res
 	var cols: Array = def.ground
 	var low: Color = cols[0]
@@ -1091,10 +1124,10 @@ func _place_ok(pos: Vector3, rad: float) -> bool:
 func _build_props() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(def.name) + 11
-	var by_mesh := {}   # "kind/variant" -> Array[Transform3D]
+	var by_mesh := {}   # "kind/variant/lite/cell x/cell z" -> Array[Transform3D]
 	for spec in def.props:
 		var kind: String = spec[0]
-		var count := int(spec[1] * density)
+		var count := int(spec[1] * length / 1000.0 * density)
 		var dmin: float = spec[2]
 		var dmax: float = spec[3]
 		var rad: float = Props.RADIUS.get(kind, 4.0)
@@ -1126,20 +1159,25 @@ func _build_props() -> void:
 				_animated_prop(kind, xf, rng.randi() % Props.VARIANTS)
 				continue
 			var lite := Game.quality == Game.LOW or dmin >= 100.0
-			var key := "%s/%d/%d" % [kind, rng.randi() % Props.VARIANTS, 1 if lite else 0]
+			var key := "%s/%d/%d/%d/%d" % [kind, rng.randi() % Props.VARIANTS, 1 if lite else 0, floori(pos.x / PROP_CELL), floori(pos.z / PROP_CELL)]
 			if not by_mesh.has(key):
 				by_mesh[key] = []
 			by_mesh[key].append(xf)
+	var meshes := {}
 	for key in by_mesh:
 		var parts: PackedStringArray = key.split("/")
+		var mk := "/".join(parts.slice(0, 3))
+		if not meshes.has(mk):
+			meshes[mk] = Props.prop(parts[0], int(parts[1]), night, parts[2] == "1")
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = Props.prop(parts[0], int(parts[1]), night, parts[2] == "1")
+		mm.mesh = meshes[mk]
 		mm.instance_count = by_mesh[key].size()
 		for i in by_mesh[key].size():
 			mm.set_instance_transform(i, by_mesh[key][i])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
+		mmi.visibility_range_end = PROP_VIEW if parts[2] == "0" else PROP_VIEW * 1.6
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if parts[0] in ["city", "giant_tree", "palm", "obelisk", "column"] and parts[2] == "0" else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mmi)
 

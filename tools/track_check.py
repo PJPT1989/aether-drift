@@ -8,6 +8,7 @@ scenery never overlap), steepest slope, and the straight at the start. Draws a m
 Mirrors Track._build_line (the "layout" driven a metre at a time, closed, resampled every
 SPACING metres)."""
 import math, re, sys, os
+import numpy as np
 from PIL import Image, ImageDraw
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -102,13 +103,19 @@ def check(name, width, cmds, hk, indoor, river, rw, out):
 	rat = radius.index(rmin) * SPACING
 	# closest approach between parts of the lap at least 200 m apart along it (hairpin legs,
 	# neighbouring straights, crossings)
-	sep, where = 1e9, (0, 0)
 	gap = int(200 / SPACING)
+	xz = np.array([(p[0], p[2]) for p in P])
+	idx = np.arange(n)
+	sep, where = 1e9, (0, 0)
 	for i in range(0, n, 2):
-		for j in range(i + gap, min(n, n - gap + i + 1), 2):
-			d = math.hypot(P[i][0] - P[j][0], P[i][2] - P[j][2])
-			if d < sep:
-				sep, where = d, (i, j)
+		far = np.abs(idx - i)
+		far = np.minimum(far, n - far) >= gap
+		if not far.any():
+			continue
+		d = np.hypot(*(xz[far] - xz[i]).T)
+		k = int(np.argmin(d))
+		if d[k] < sep:
+			sep, where = float(d[k]), (i, int(idx[far][k]))
 	slope = max(abs(P[(i + 1) % n][1] - P[i][1]) / SPACING for i in range(n))
 	straight = 0
 	while straight < n // 4 and abs(turn(-straight - 1, straight + 1)) < 0.06:

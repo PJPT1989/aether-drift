@@ -796,6 +796,8 @@ func _simtest() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--track="):
 			only = int(a.get_slice("=", 1))
+	# one lap each: the tracks are long
+	Game.laps = 1
 	for ti in Tracks.LIST.size():
 		if only >= 0 and ti != only:
 			continue
@@ -812,7 +814,7 @@ func _simtest() -> void:
 		var walls := 0
 		var stuck := 0
 		var last_total := {}
-		while res.is_empty() and steps < 60 * 400:
+		while res.is_empty() and steps < 60 * 600:
 			r.simulate(1.0 / 60.0)
 			steps += 1
 			for c in r.cars:

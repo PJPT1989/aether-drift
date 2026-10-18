@@ -10,9 +10,9 @@ Sister project: `PJPT1989/ashen-depths` (same tooling). The web build is publish
 ## Running and testing (cloud or Linux)
 - `tools/setup_godot.sh` installs Godot 4.3 as `~/.local/bin/godot` and imports the project (the
   SessionStart hook in `.claude/settings.json` runs it in cloud sessions).
-- `godot --headless --path . -- --simtest [--track=N]` races every track with eight AI cars at full
-  speed without rendering (about 20 s) and prints lap times, wall hits and stuck checks. Run it
-  after any change to physics, AI or track layouts; every car must finish.
+- `godot --headless --path . -- --simtest [--track=N]` races one lap of every track with eight AI
+  cars at full speed without rendering (about 2 minutes) and prints lap times, wall hits and stuck
+  checks. Run it after any change to physics, AI or track layouts; every car must finish.
 - `tools/smoke_test.sh [dir]` runs `scripts/autotest.gd` under `xvfb-run` (about 2 minutes): menus,
   a stretch of every track with the AI driving, a side view, pause, results. Look at the PNGs. A good
   run ends with `AUTOTEST done` and has no `SCRIPT ERROR`. ALSA errors and leaked RIDs are normal.
@@ -36,9 +36,13 @@ Sister project: `PJPT1989/ashen-depths` (same tooling). The web build is publish
 - Track layouts in `tracks.gd` are drives: `["S", metres]` straights and `["L"/"R", radius, degrees]`
   bends from the start line (turns add up to 360; a small end gap is spread over the lap), plus
   "heights" keys and "indoor" stretches (`Track.INDOOR` styles, own light via `Track.update_view`).
+  The layouts (11-16 km, about four minutes a lap, 3-4 curving indoor stretches each) are made by
+  `python3 tools/track_gen.py --write` from each track's style and seed in its `STYLES`, which also
+  writes "heights", "indoor" and the river; edit the style, not the generated lists.
   `python3 tools/track_check.py` checks a layout (length, tightest bend, clearance between parts of
-  the lap, river) and draws maps without Godot. Cars do not use the physics engine: they slide on
-  the centre line samples (`Track.locate/lateral/road_y`), with walls at `Track.limit`.
+  the lap, river) and draws maps without Godot. Long meshes are cut into pieces (`Track.CHUNK`) and
+  scenery is batched per `Track.PROP_CELL` so far pieces are culled; props counts are per km. Cars
+  do not use the physics engine: they slide on the centre line samples (`Track.locate/lateral/road_y`), with walls at `Track.limit`.
 - World events (`scripts/hazards.gd`, `Hazards.KINDS`): each track lists two kinds in `Tracks.LIST`
   "events". `Race.simulate` calls `hazards.update` once per step and `hazards.affect(car)` before each
   `car.step`; events act through `Car.fx_grip/fx_top/fx_push`, `Car.spin_out()` and `hop_t`. The AI

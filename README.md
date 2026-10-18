@@ -72,15 +72,16 @@ A car caught by a blast, a bolt or a slick spins once round and loses most of it
 
 | # | Track | Plane | Length | Look | Indoors |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Ghirapur Nightfall | Avishkar | 3.6 km | night city streets with square corners and two hairpins, copper towers, aether pipes over the street, a spire with rings, thopters | an aether foundry hall lit by furnaces |
-| 2 | The Inventors' Outskirts | Avishkar | 3.7 km | dawn countryside with fast esses and a hairpin climb, coloured terraced fields, curling trees, windmills, aether pipelines | a lantern-lit cave through a hill |
-| 3 | Banks of the Living River | Amonkhet | 3.7 km | green river valley with chicanes and a hairpin, palms, reeds, obelisks, guardian statues, pyramids, grandstands | a temple of columns and braziers |
-| 4 | Primordial Canopy | Muraganda | 3.5 km | twisting elevated wooden track above the jungle, giant trees, geysers, volcano, long-necked beasts, shattered moon | the bore of a hollow giant log, glowing with fungus |
-| 5 | The Broken Sands | Amonkhet | 4.6 km | fast desert sweepers and a long hairpin, dunes, ruins and fallen statues, mesas, a tomb of ancient kings | a royal tomb cut into the rock |
-| 6 | Heart of Ghirapur | Avishkar | 3.5 km | technical night finale, hairpins and chicanes, grandstands, fireworks, the Aetherspark trophy | an aether conduit tunnel |
+| 1 | Ghirapur Nightfall | Avishkar | 11.8 km | night city streets: square corners, city blocks, hairpins and chicanes, copper towers, aether pipes over the street, spires with rings, thopters | two aether foundry halls lit by furnaces and an aether conduit |
+| 2 | The Inventors' Outskirts | Avishkar | 13.3 km | dawn countryside with fast esses, sweepers and switchbacks over the hills, coloured terraced fields, curling trees, windmills, aether pipelines | three lantern-lit caves through the hills |
+| 3 | Banks of the Living River | Amonkhet | 12.5 km | green river valley full of chicanes, palms, reeds, obelisks, guardian statues, pyramids, grandstands | two temples of columns and braziers and a cave |
+| 4 | Primordial Canopy | Muraganda | 11.5 km | the twistiest: an elevated wooden track winding above the jungle, giant trees, geysers, volcanoes, long-necked beasts, shattered moon | four hollow giant logs glowing with fungus |
+| 5 | The Broken Sands | Amonkhet | 15.7 km | the fastest: long desert sweepers and switchbacks, dunes, ruins and fallen statues, mesas, pyramids, a tomb of ancient kings | two royal tombs cut into the rock and a cave |
+| 6 | Heart of Ghirapur | Avishkar | 11.9 km | technical night finale, hairpins, chicanes and city blocks, grandstands, fireworks, the Aetherspark trophy | two aether conduit tunnels and a foundry hall |
 
-A lap takes a little over a minute. Each track has one indoor stretch with its own light: the sky
-light dims, the fog and colours change as you drive in and back out. World events never start
+A lap takes about four minutes, so a three-lap race is about twelve. Each track has three or four
+indoor stretches of 400-800 m that bend and twist inside, each with its own light: the sky light
+dims, the fog and colours change as you drive in and back out. World events never start
 indoors, and gusts and lightning cannot reach you there. The minimap shows indoor stretches darker.
 
 Tracks 1-5 begin by driving out of a portal ring (the plane-to-plane gates of the story).
@@ -108,6 +109,7 @@ once if the first seconds of a race run under 24 fps and nobody chose a level.
 | `scripts/game.gd` | `Game` autoload: teams, settings, controls, fonts, materials, generated sounds |
 | `scripts/tracks.gd` | the six track definitions (layout as a drive of straights and bends, heights, indoor stretches, sky, colours, props, landmarks) |
 | `scripts/track.gd` | builds a track (road, terrain, river, indoor stretches, scenery), answers position queries, changes the light indoors |
+| `tools/track_gen.py` | generates the long layouts in each track's style (with tunnels, heights and the river) and writes them into `tracks.gd` |
 | `tools/track_check.py` | checks the layouts without Godot (length, tightest bend, clearances) and draws a map of each |
 | `scripts/props.gd` | scenery, arches and landmarks made from primitives |
 | `scripts/car.gd` | driving physics, drift and boost, lap counting, AI driver |
