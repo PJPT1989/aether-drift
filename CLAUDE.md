@@ -20,6 +20,10 @@ Sister project: `PJPT1989/ashen-depths` (same tooling). The web build is publish
   Chromium (Playwright is preinstalled: launch with `--use-gl=angle --use-angle=swiftshader
   --enable-unsafe-swiftshader`). The web fonts have no fallback: Orbitron lacks `·` and arrows, so
   use plain ASCII in titles and buttons.
+- Mid-race stutters in the browser are shader compiles (WebGL keeps no shader cache).
+  `Hazards.warm_up` draws every event, particle effect and material variant while loading; anything
+  new that appears mid-race (a new light, material or effect) must be covered there. To check, wrap
+  `WebGL2RenderingContext.prototype.linkProgram` in Playwright and count links during a race.
 
 ## Design
 - Lore source: the Aetherdrift set's Grand Prix (race starts at nightfall in Ghirapur on Avishkar,

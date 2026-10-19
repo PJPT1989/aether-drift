@@ -153,19 +153,95 @@ func start_event(kind: String, s0: float, seed_v: int, quiet := false) -> Dictio
 	return e
 
 
-## Builds each of the track's events once in front of the camera, lets two frames draw them and
-## throws them away. The renderer compiles the shaders a new kind of object needs the first time
-## it is drawn, which in the browser froze the race for a few seconds the moment an event
-## appeared; this way it happens behind the loading screen.
+## Draws, behind the loading screen, everything that would otherwise make the browser stop and
+## compile shaders in the middle of the race. A shader is compiled the first time something is
+## drawn with a new combination of material and light, which in the browser froze the race for a
+## moment whenever an event appeared, a spire's light came into reach or the game switched itself
+## to Low quality. So each of the track's events, a copy of every particle effect and a stand-in
+## for every distinct mesh and material in the scene are drawn close up (in the player's
+## headlights at night) and far beyond them, each time with and without a nearby lamp and with
+## and without glow (Low quality has none).
 func warm_up() -> void:
 	var cam := race.camera
-	var front := cam.global_position - cam.global_basis.z * 14.0
-	var s0 := fposmod(fposmod(race.player.total, track.length) + 20.0, track.length)
+	var lamp := OmniLight3D.new()
+	lamp.omni_range = 500.0
+	lamp.light_energy = 0.2
+	race.add_child(lamp)
+	lamp.global_position = cam.global_position + Vector3(0, 8.0, 0)
+	# one of each kind of particle effect already in the scene (fireworks, steam, spray...)
+	var effects := {}
+	for p: CPUParticles3D in race.find_children("*", "CPUParticles3D", true, false):
+		var key := "%d/%s/%s" % [p.mesh.get_instance_id() if p.mesh else 0, p.color_ramp != null, p.local_coords]
+		if not effects.has(key):
+			effects[key] = p
+	var stand_ins := _stand_ins()
+	var glow0 := track.env.glow_enabled
+	for glow: bool in [glow0, not glow0]:
+		track.env.glow_enabled = glow
+		for lit: bool in [false, true]:
+			lamp.visible = lit
+			for dist: float in [14.0, 110.0]:
+				await _warm_pass(cam, dist, effects.values(), stand_ins)
+	track.env.glow_enabled = glow0
+	lamp.queue_free()
+	for g: Node in stand_ins:
+		g.queue_free()
+
+
+## One hidden copy of each distinct mesh-and-material combination in the race (road, terrain,
+## scenery, tunnels, cars...), sharing its mesh and materials.
+func _stand_ins() -> Array:
+	var seen := {}
+	var out: Array = []
+	for g: GeometryInstance3D in race.find_children("*", "GeometryInstance3D", true, false):
+		var mesh: Mesh = null
+		if g is MeshInstance3D:
+			mesh = g.mesh
+		elif g is MultiMeshInstance3D and g.multimesh:
+			mesh = g.multimesh.mesh
+		if mesh == null or mesh.get_surface_count() == 0:
+			continue
+		var multi := g is MultiMeshInstance3D
+		var fmt: String = str((mesh as ArrayMesh).surface_get_format(0)) if mesh is ArrayMesh else mesh.get_class()
+		var key := "%s/%d/%d/%s" % [multi, g.material_override.get_instance_id() if g.material_override else 0, g.cast_shadow, fmt]
+		for q in mesh.get_surface_count():
+			var m := mesh.surface_get_material(q)
+			key += "/%d" % (m.get_instance_id() if m else 0)
+		if seen.has(key):
+			continue
+		seen[key] = true
+		var c: GeometryInstance3D
+		if multi:
+			var src: MultiMesh = g.multimesh
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_colors = src.use_colors
+			mm.use_custom_data = src.use_custom_data
+			mm.mesh = mesh
+			mm.instance_count = 1
+			mm.set_instance_transform(0, Transform3D())
+			c = MultiMeshInstance3D.new()
+			c.multimesh = mm
+		else:
+			c = MeshInstance3D.new()
+			c.mesh = mesh
+		c.material_override = g.material_override
+		c.cast_shadow = g.cast_shadow
+		c.set_meta("centre", mesh.get_aabb().get_center())
+		c.visible = false
+		add_child(c)
+		out.append(c)
+	return out
+
+
+func _warm_pass(cam: Camera3D, dist: float, effects: Array, stand_ins: Array) -> void:
+	var front := cam.global_position - cam.global_basis.z * dist + Vector3(0, -2.0, 0)
+	var s0 := fposmod(fposmod(race.player.total, track.length) + dist + 6.0, track.length)
 	var nodes: Array = []
 	for kind: String in kinds:
 		var e := start_event(kind, s0, randi(), true)
 		if e.type == "strikes":
-			var bolt := _bolt(race.player.position)
+			var bolt := _bolt(race.player.position - cam.global_basis.z * dist)
 			add_child(bolt)
 			e.nodes.append(bolt)
 		nodes.append_array(e.nodes)
@@ -173,12 +249,25 @@ func warm_up() -> void:
 		# meshes built in world space (road strips, sand, beetles, the bolt) are already in view
 		if n.position != Vector3.ZERO or n.has_meta("phase"):
 			n.global_position = front
+	for p: CPUParticles3D in effects:
+		var c: CPUParticles3D = p.duplicate()
+		add_child(c)
+		c.global_position = front + Vector3(0, 3.0, 0)
+		c.visible = true
+		nodes.append(c)
+	for n: Node3D in nodes:
 		if n is CPUParticles3D:
 			n.emitting = true
+			n.restart()
+	for g: GeometryInstance3D in stand_ins:
+		g.global_position = front - g.get_meta("centre")
+		g.visible = true
 	for i in 2:
 		await RenderingServer.frame_post_draw
 	for n: Node3D in nodes:
 		n.queue_free()
+	for g: GeometryInstance3D in stand_ins:
+		g.visible = false
 
 
 func update(dt: float, racing: bool) -> void:

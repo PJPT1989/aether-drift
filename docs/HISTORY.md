@@ -121,3 +121,15 @@ To keep it fast, road, curbs and rails are cut into 300 m pieces and scenery is 
 square, each with a view distance, so the parts out of sight are skipped. Props are counted per km,
 more landmarks along each lap, terrain resolution follows the track's size. The sim test runs one lap.
 Decided without asking: laps stay at 3 by default (a race is about 12 minutes).
+
+## 8. No stutter when a world event is announced (2026-10-19)
+> I have noticed that some maps still suffer from "stutters" when event is announced, can that be fixed?
+
+Cause: the browser (WebGL) cannot keep compiled shaders between runs, so the first time an event's
+pieces, a lit prop or a particle effect appeared in a new light state (in the headlights, near a
+landmark lamp, or after the automatic switch to Low) the game compiled 7-15 shader programs in the
+middle of the race. `Hazards.warm_up` now draws, while the race loads, every event of the track,
+every particle effect and one hidden copy of every distinct material and mesh format, near and far,
+with and without a point light, with glow on and off. Measured in headless Chromium by counting
+WebGL `linkProgram` calls: 0-2 compiles during a race instead of 7-15 per event. Loading takes a
+moment longer (about 30 extra frames on a real GPU).

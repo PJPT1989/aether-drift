@@ -48,7 +48,8 @@ func _run() -> void:
 			continue
 		main.start_race(t, t % Game.TEAMS.size())
 		await _wait(4)
-		while main.race == null:
+		# the race exists before it has finished loading; the HUD comes last
+		while main.race == null or not is_instance_valid(main.hud) or main.hud.race != main.race:
 			await _wait(1)
 		main.race.autopilot = true
 		await _wait(3)
