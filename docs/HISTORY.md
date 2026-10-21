@@ -147,3 +147,15 @@ Cars follow the road but lift off over a crest taken fast and land a little furt
 the player); the terrain sits a little lower in hollows so it never shows through the road. The sim
 test counts lift-offs; the smoke test shoots the biggest climb and drop on every track.
 Decided without asking: car speed does not change on slopes (the AI and lap times stay as they were).
+
+## 10. Freeze just before an event banner (2026-10-21)
+> global event announcments still lag the game few seconds beforehand
+> (first track, most events, the game freezes for a moment before the banner, single player)
+
+Cause: the warm-up while loading drew every event once and then threw it away, and Godot frees a
+material's shader together with the last material using it. Each event makes new materials, so on
+the first track the aether pipe burst's glowing strip needed 6 shader programs built again in the
+browser, in the frame the event was created, before the banner showed. `Hazards._kept` now holds
+the warmed-up materials for the whole race. Measured in headless Chromium with only one event kind
+firing (new test flag `event=KIND`): pipe burst 6 programs built before, 0 after; thopter swarm and
+river surge 0.

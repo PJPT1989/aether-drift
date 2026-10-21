@@ -22,8 +22,10 @@ Sister project: `PJPT1989/ashen-depths` (same tooling). The web build is publish
   use plain ASCII in titles and buttons.
 - Mid-race stutters in the browser are shader compiles (WebGL keeps no shader cache).
   `Hazards.warm_up` draws every event, particle effect and material variant while loading; anything
-  new that appears mid-race (a new light, material or effect) must be covered there. To check, wrap
-  `WebGL2RenderingContext.prototype.linkProgram` in Playwright and count links during a race.
+  new that appears mid-race (a new light, material or effect) must be covered there, and its materials
+  kept alive (`Hazards._kept`: Godot frees a shader with its last material). To check, wrap
+  `WebGL2RenderingContext.prototype.linkProgram` in Playwright and count links during a race; the
+  test flag `?aenet=...,event=KIND` makes only that event fire.
 
 ## Design
 - Lore source: the Aetherdrift set's Grand Prix (race starts at nightfall in Ghirapur on Avishkar,

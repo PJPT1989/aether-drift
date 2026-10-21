@@ -56,6 +56,7 @@ var banner_t := 0.0
 var fired := 0                  # events so far this race (the sim test reports it)
 var spins := 0                  # cars spun out or stopped by events
 var _next := 0.0
+var _kept: Array[Material] = []
 var rng := RandomNumberGenerator.new()   # seeded per event, so all players build the same one
 var _strip_mat: StandardMaterial3D
 var _thopter: ArrayMesh
@@ -265,9 +266,32 @@ func _warm_pass(cam: Camera3D, dist: float, effects: Array, stand_ins: Array) ->
 	for i in 2:
 		await RenderingServer.frame_post_draw
 	for n: Node3D in nodes:
+		_keep_materials(n)
 		n.queue_free()
 	for g: GeometryInstance3D in stand_ins:
 		g.visible = false
+
+
+## Holds on to the materials of the warmed-up events. Godot frees a material's shader with the
+## last material that uses it, so without this each event would make new materials whose shader
+## had to be compiled again (in the browser that froze the race just before the banner).
+func _keep_materials(n: Node) -> void:
+	var g := n as GeometryInstance3D
+	if g == null:
+		return
+	if g.material_override:
+		_kept.append(g.material_override)
+	var mesh: Mesh = null
+	if g is MeshInstance3D:
+		mesh = (g as MeshInstance3D).mesh
+	elif g is CPUParticles3D:
+		mesh = (g as CPUParticles3D).mesh
+	elif g is MultiMeshInstance3D and (g as MultiMeshInstance3D).multimesh:
+		mesh = (g as MultiMeshInstance3D).multimesh.mesh
+	if mesh:
+		for i in mesh.get_surface_count():
+			if mesh.surface_get_material(i):
+				_kept.append(mesh.surface_get_material(i))
 
 
 func update(dt: float, racing: bool) -> void:

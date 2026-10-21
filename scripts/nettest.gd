@@ -4,6 +4,7 @@ extends Node
 ##   start=N      host: start once N players are in               laps=N, track=N
 ##   bot          the AI drives this player's car                 quit       quit after the results
 ##   shots=DIR    save screenshots (lobby, race, results) there
+##   event=KIND   only this world event fires (host)
 ## Prints NETTEST lines; in the browser it also puts the latest one in the page title.
 
 var main: Node
@@ -72,6 +73,8 @@ func _process(dt: float) -> void:
 	var r: Race = main.race
 	if r and Net.test_flag("bot") != "":
 		r.autopilot = true
+	if r and Net.test_flag("event") != "":
+		r.hazards.kinds = [Net.test_flag("event")]
 	if r and r.hazards.fired != _fired:
 		_fired = r.hazards.fired
 		_say("event %s" % r.hazards.banner)
