@@ -833,9 +833,9 @@ func _simtest() -> void:
 		var lap_best := INF
 		for c in r.cars:
 			lap_best = minf(lap_best, c.best_lap)
-		print("SIMTEST %d %s: length %.0f m, built %d ms, race %.1f s, best lap %s, hard wall hits %d, stuck checks %d, events %d, spins %d, finished %s" % [
+		print("SIMTEST %d %s: length %.0f m, built %d ms, race %.1f s, best lap %s, hard wall hits %d, stuck checks %d, events %d, spins %d, lift-offs %d, finished %s" % [
 			ti, Tracks.LIST[ti].name, r.track.length, built, steps / 60.0, Race.fmt_time(lap_best), walls, stuck,
-			r.hazards.fired, r.hazards.spins, str(r.cars.filter(func(c): return c.finished).size())])
+			r.hazards.fired, r.hazards.spins, r.cars.reduce(func(a, c): return a + c.lifts, 0), str(r.cars.filter(func(c): return c.finished).size())])
 		r.queue_free()
 		await get_tree().process_frame
 	print("SIMTEST done")

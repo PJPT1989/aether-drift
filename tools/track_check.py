@@ -117,6 +117,8 @@ def check(name, width, cmds, hk, indoor, river, rw, out):
 		if d[k] < sep:
 			sep, where = float(d[k]), (i, int(idx[far][k]))
 	slope = max(abs(P[(i + 1) % n][1] - P[i][1]) / SPACING for i in range(n))
+	climb = sum(max(0.0, P[(i + 1) % n][1] - P[i][1]) for i in range(n))
+	ys = [p[1] for p in P]
 	straight = 0
 	while straight < n // 4 and abs(turn(-straight - 1, straight + 1)) < 0.06:
 		straight += 1
@@ -128,8 +130,8 @@ def check(name, width, cmds, hk, indoor, river, rw, out):
 			dx, dz = bx - ax, bz - az
 			t = max(0.0, min(1.0, ((P[i][0] - ax) * dx + (P[i][2] - az) * dz) / (dx * dx + dz * dz)))
 			river_gap = min(river_gap, math.hypot(P[i][0] - ax - dx * t, P[i][2] - az - dz * t) - rw * 0.5)
-	print("%-28s %5.0f m  bends<90m %2d  tightest r %4.0f m (at %4.0f m)  closest other part %4.0f m (at %4.0f/%4.0f m)  slope %3.0f%%  start straight +-%3.0f m  loop gap %3.0f m, turn %4.0f deg%s"
-		% (name, total, turns, rmin, rat, sep, where[0] * SPACING, where[1] * SPACING, slope * 100, straight * SPACING,
+	print("%-28s %5.0f m  bends<90m %2d  tightest r %4.0f m (at %4.0f m)  closest other part %4.0f m (at %4.0f/%4.0f m)  slope %3.0f%%  heights %3.0f-%3.0f m, %4.0f m climbing  start straight +-%3.0f m  loop gap %3.0f m, turn %4.0f deg%s"
+		% (name, total, turns, rmin, rat, sep, where[0] * SPACING, where[1] * SPACING, slope * 100, min(ys), max(ys), climb, straight * SPACING,
 		math.hypot(*miss), net_turn, "  river %3.0f m away" % river_gap if river else ""))
 	# map
 	xs = [p[0] for p in P]

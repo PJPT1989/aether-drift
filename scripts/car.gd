@@ -17,6 +17,7 @@ const BOOST_ACCEL := 16.0
 const BOOST_TOP := 1.28
 const AETHER_DRAIN := 0.32    # per second while boosting
 const CAR_HALF_WIDTH := 1.0
+const LIFT_G := 18.0          # m/s2 pulling a car back down after it lifts off over a crest
 
 var team: Dictionary
 var team_idx := 0
@@ -70,6 +71,10 @@ var fx_top := 1.0
 var fx_push := Vector3.ZERO
 var spin_t := 0.0
 var hop_t := 0.0
+var air := 0.0                # metres above the road after lifting off over a crest
+var _vy := 0.0
+var lifts := 0                # times this car lifted off over a crest (the sim test counts them)
+var _blob: MeshInstance3D
 var _spin_rate := 0.0
 
 # online races (Net): a remote car is driven on another machine and follows its messages
@@ -124,6 +129,7 @@ func setup(t: Track, team_index: int, player: bool) -> void:
 		_flames.append(f)
 	# soft shadow blob so cars sit on the road even with shadows off
 	var blob := MeshInstance3D.new()
+	_blob = blob
 	var q := QuadMesh.new()
 	q.size = Vector2(2.6, 5.2)
 	q.orientation = PlaneMesh.FACE_Y
@@ -323,7 +329,22 @@ func step(dt: float, racing: bool, time_now: float) -> void:
 			var t := track.T[idx]
 			var along_yaw := atan2(-t.x, -t.z)
 			yaw = lerp_angle(yaw, along_yaw, clampf(into / 40.0, 0.05, 0.4))
-	position.y = track.road_y(position, idx)
+	# up and down: follow the road, but over a crest that drops away faster than the car falls it
+	# lifts off and comes down a little further on
+	var ry := track.road_y(position, idx)
+	var y0 := position.y
+	var y := y0 + (_vy - LIFT_G * dt) * dt
+	if y <= ry or absf(ry - y0) > 3.0:
+		if air > 0.4 and _vy < -5.0 and is_player:
+			Game.play("hit", clampf(-22.0 - _vy, -16.0, -6.0), 0.55)
+		_vy = 0.0 if absf(ry - y0) > 3.0 else clampf((ry - y0) / dt, -30.0, 30.0)
+		y = ry
+	else:
+		_vy -= LIFT_G * dt
+	if y - ry > 0.3 and air <= 0.3:
+		lifts += 1
+	air = y - ry
+	position.y = y
 	# lap counting
 	var s := track.along(position, idx)
 	var L := track.length
@@ -481,6 +502,11 @@ func _update_visuals(dt: float) -> void:
 	rotation = Vector3(0, yaw, 0)
 	var t := track.T[idx]
 	var pitch := asin(clampf(t.y, -1, 1)) * forward().dot(Vector3(t.x, 0, t.z).normalized())
+	if remote:
+		air = maxf(0.0, position.y - track.road_y(position, idx))
+	elif air > 0.05:
+		pitch = atan2(_vy, maxf(absf(speed), 5.0))
+	_blob.position.y = 0.12 - air
 	var lat_acc := steer * clampf(speed / 40.0, 0.0, 1.0)
 	var want := Vector2(pitch, -lat_acc * (0.09 if not drifting else 0.14))
 	_tilt = _tilt.lerp(want, clampf(dt * 6.0, 0.0, 1.0))

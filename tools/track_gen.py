@@ -20,32 +20,33 @@ TAU = math.tau
 # Per track, in race order. length: metres; outline: half sizes of the loop the drive follows;
 # limit: walls from the centre line (Track.limit); feats: feature weights; r: bend radius range;
 # s: straight range; tunnels: indoor styles, in order; tr: bend radius range inside them;
-# h: height range and how many metres between height keys.
+# h: height range; hills: weights of climbs, drops, crests, dips and level stretches; bump: crest
+# and dip heights; elevated: no ground between parts of the lap to keep sensible.
 STYLES = [
 	{"seed": 11, "length": 12500, "outline": (1150, 800), "limit": 14.9, "start": 330, "close_r": 45,
 		"feats": {"block": 4, "corner": 3, "hairpin": 1.2, "chicane": 1.5, "straight": 2},
 		"r": (30, 60), "s": (70, 240), "snap": 90, "tunnels": ["foundry", "conduit", "foundry"], "tr": (60, 90),
-		"h": (0, 10, 900)},
+		"h": (0, 22), "bump": (4, 9), "hills": {"crest": 4, "dip": 2, "climb": 2, "drop": 2, "level": 1.5}},
 	{"seed": 22, "length": 13500, "outline": (1300, 900), "limit": 12.8, "start": 300, "close_r": 90,
 		"feats": {"esses": 4, "sweep": 3, "hairpin": 1.2, "corner": 1.5, "straight": 1.5},
 		"r": (60, 150), "s": (80, 300), "snap": 0, "tunnels": ["cave", "cave", "cave"], "tr": (70, 120),
-		"h": (0, 30, 800)},
+		"h": (0, 45), "bump": (5, 11), "hills": {"climb": 4, "drop": 4, "crest": 2.5, "dip": 1.5, "level": 1}},
 	{"seed": 33, "length": 13000, "outline": (1250, 850), "limit": 13.3, "start": 400, "close_r": 60,
 		"feats": {"chicane": 3.5, "esses": 2.5, "corner": 2, "hairpin": 1.3, "straight": 1.5},
 		"r": (40, 90), "s": (60, 240), "snap": 0, "tunnels": ["temple", "cave", "temple"], "tr": (65, 100),
-		"h": (0, 6, 1000), "river": 80.0},
+		"h": (0, 16), "bump": (3, 7), "hills": {"climb": 2, "drop": 2, "dip": 2, "crest": 2, "level": 2}, "river": 80.0},
 	{"seed": 44, "length": 12000, "outline": (1100, 800), "limit": 8.9, "start": 240, "close_r": 55,
 		"feats": {"esses": 4, "corner": 2.5, "chicane": 2, "hairpin": 1.2, "straight": 1},
 		"r": (38, 85), "s": (50, 200), "snap": 0, "tunnels": ["hollow", "hollow", "hollow", "hollow"], "tr": (55, 85),
-		"h": (18, 38, 700)},
+		"h": (10, 52), "bump": (6, 12), "hills": {"climb": 4, "drop": 4, "dip": 2.5, "crest": 2, "level": 1}, "elevated": True},
 	{"seed": 55, "length": 15500, "outline": (1550, 1050), "limit": 24.3, "start": 320, "close_r": 120,
 		"feats": {"sweep": 4, "esses": 2.5, "hairpin": 1, "corner": 1.5, "straight": 2.5},
 		"r": (90, 200), "s": (120, 380), "snap": 0, "tunnels": ["tomb", "cave", "tomb"], "tr": (90, 150),
-		"h": (2, 26, 900)},
+		"h": (2, 38), "bump": (6, 13), "hills": {"crest": 5, "dip": 2, "climb": 2, "drop": 2, "level": 1}},
 	{"seed": 66, "length": 12000, "outline": (1100, 780), "limit": 13.8, "start": 320, "close_r": 45,
 		"feats": {"hairpin": 2, "chicane": 3, "block": 2.5, "corner": 2, "esses": 1.5, "straight": 1},
 		"r": (30, 60), "s": (60, 200), "snap": 45, "tunnels": ["conduit", "foundry", "conduit"], "tr": (55, 85),
-		"h": (0, 12, 900)},
+		"h": (0, 26), "bump": (4, 9), "hills": {"crest": 3, "climb": 3, "drop": 3, "dip": 2, "level": 1.5}},
 ]
 
 STEP = 2.0          # metres between checked points (Track.SPACING)
@@ -53,6 +54,7 @@ NEAR = 200.0        # parts of the lap closer than this along it are neighbours,
 MARGIN = 8.0        # extra room beyond the walls on each side of a part of the road
 HILL = 32.0         # extra room round an indoor stretch (its hill, hall or trunk)
 CELL = 60.0
+BANK = 0.55         # steepest ground (rise / run) allowed between two nearby parts of the lap
 
 
 def wrap(a):
@@ -329,15 +331,92 @@ def project(ol, x, y, f0):
 	return max(f0, cum[bi] / cum[-1])
 
 
-def heights(st, rng, total, tunnels):
-	lo, hi, every = st["h"]
-	keys = [(0.0, round(lo + (hi - lo) * 0.2, 1))]
-	d = every
-	while d < total - every * 0.8:
-		y = rng.uniform(lo, hi) if len(keys) % 2 else rng.uniform(lo, (lo + hi) * 0.5)
-		keys.append((round(d / total, 3), round(y, 1)))
-		d += every * rng.uniform(0.8, 1.2)
+def eased(keys, d):
+	"""Height at `d` metres from (metres, height) keys, eased like Track._height_at."""
+	for a, b in zip(keys, keys[1:]):
+		if a[0] <= d <= b[0]:
+			t = (d - a[0]) / max(b[0] - a[0], 1e-6)
+			return a[1] + (b[1] - a[1]) * (1 - math.cos(t * math.pi)) * 0.5
+	return keys[-1][1]
+
+
+def hill_plan(st, rng, total, tunnels):
+	"""Height keys in metres along the lap: level start straight, then a run of hills in the
+	track's style: long climbs and drops, crests, dips and level stretches. Crests stay out of
+	indoor stretches (a car could lift off into the roof there)."""
+	lo, hi = st["h"]
+	kinds = list(st["hills"].items())
+	y0 = round(lo + (hi - lo) * 0.25, 1)
+	keys = [(0.0, y0), (st["start"] * 0.7, y0)]
+	d, y = keys[-1]
+	inside = lambda a, b: any(a < t1 + 30 and b > t0 - 30 for _, t0, t1 in tunnels)
+	while d < total - 700:
+		tot = sum(w for _, w in kinds)
+		pick = rng.uniform(0, tot)
+		for kind, w in kinds:
+			pick -= w
+			if pick <= 0:
+				break
+		if kind in ("crest", "dip"):
+			# eased up and back down: steepest grade is about 1.6 x rise / half length
+			rise = rng.uniform(*st["bump"]) * (1 if kind == "crest" else -1)
+			if not lo - 3 <= y + rise <= hi + 3:
+				rise = -rise
+			half = abs(rise) * 1.6 / rng.uniform(0.07, 0.12)
+			if inside(d, d + half * 2):
+				continue
+			keys += [(d + half, round(y + rise, 1)), (d + half * 2, y)]
+			d += half * 2
+		elif kind in ("climb", "drop"):
+			up = kind == "climb" and y + 8 <= hi or y - 8 < lo
+			want = rng.uniform(y + 8, max(y + 8, hi)) if up else rng.uniform(min(lo, y - 8), y - 8)
+			run = abs(want - y) * 1.6 / rng.uniform(0.05, 0.10)
+			y = round(want, 1)
+			d += run
+			keys.append((d, y))
+		else:
+			d += rng.uniform(80, 260)
+			keys.append((d, y))
+	# back down (or up) to the start's level well before the line
+	keys.append((max(d + 50, total - 160 - abs(y - y0) * 1.6 / 0.07), y))
+	keys.append((total - 140, y0))
+	keys.sort()
 	return keys
+
+
+def heights(st, rng, dr, total):
+	"""Hill keys as [fraction of the lap, height]. Where two parts of the lap run near each other
+	the ground between them is a bank; a plan is redrawn until no bank is steeper than BANK."""
+	pts = dr.pts[::3]
+	grid = {}
+	for k, p in enumerate(pts):
+		grid.setdefault((int(p[0] // 100), int(p[1] // 100)), []).append(k)
+	best = None
+	for attempt in range(400):
+		keys = hill_plan(st, rng, total, dr.tunnels)
+		ys = [eased(keys, p[3]) for p in pts]
+		worst = 0.0
+		if not st.get("elevated"):
+			for k, p in enumerate(pts):
+				cx, cy = int(p[0] // 100), int(p[1] // 100)
+				for gx in range(cx - 2, cx + 3):
+					for gy in range(cy - 2, cy + 3):
+						for j in grid.get((gx, gy), ()):
+							q = pts[j]
+							along = abs(p[3] - q[3])
+							if min(along, total - along) < 300:
+								continue
+							room = math.hypot(p[0] - q[0], p[1] - q[1]) - 2 * st["limit"] - 6
+							worst = max(worst, abs(ys[k] - ys[j]) / max(room, 1.0))
+		if best is None or worst < best[0]:
+			best = (worst, keys)
+		if worst <= BANK:
+			break
+	worst, keys = best
+	climb = sum(max(0.0, b[1] - a[1]) for a, b in zip(keys, keys[1:]))
+	print("  hills: %d keys, %.0f-%.0f m high, %.0f m of climbing, steepest bank %.2f (attempt %d)" % (len(keys),
+		min(k[1] for k in keys), max(k[1] for k in keys), climb, worst, attempt))
+	return [(round(d / total, 4), y) for d, y in keys]
 
 
 def river(st, dr):
@@ -402,7 +481,7 @@ def build(ti, st):
 	total = dr.d
 	out = {
 		"layout": fmt_layout(dr.cmds),
-		"heights": "[" + ", ".join("[%g, %g]" % k for k in heights(st, rng, total, dr.tunnels)) + "]",
+		"heights": "[" + ", ".join("[%g, %g]" % k for k in heights(st, rng, dr, total)) + "]",
 		"indoor": "[" + ", ".join('["%s", %.3f, %.3f]' % (k, a / total, b / total) for k, a, b in dr.tunnels) + "]",
 	}
 	if "river" in st:

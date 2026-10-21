@@ -133,3 +133,17 @@ every particle effect and one hidden copy of every distinct material and mesh fo
 with and without a point light, with glow on and off. Measured in headless Chromium by counting
 WebGL `linkProgram` calls: 0-2 compiles during a race instead of 7-15 per event. Loading takes a
 moment longer (about 30 extra frames on a real GPU).
+
+## 9. Hills: climbs, drops, crests and dips (2026-10-21)
+> Can you adjust maps a little bit "vertically". Meaning introducing various inclines/declines to
+> maps in different places
+
+`tools/track_gen.py` now draws each track's height as a run of hills in the track's style: long
+climbs and drops (5-10% average, up to about 12%), crests and dips of 3-13 m, level stretches, a
+level start straight. Where two parts of the lap run close the plan is redrawn until the ground
+between them is no steeper than a bank, and crests stay out of tunnels. The layouts are unchanged.
+Climbing per lap went from 11-79 m to 213-349 m (Nightfall 11 to 249 m, River 22 to 213 m).
+Cars follow the road but lift off over a crest taken fast and land a little further on (a thud for
+the player); the terrain sits a little lower in hollows so it never shows through the road. The sim
+test counts lift-offs; the smoke test shoots the biggest climb and drop on every track.
+Decided without asking: car speed does not change on slopes (the AI and lap times stay as they were).

@@ -73,6 +73,23 @@ func _run() -> void:
 		r.camera.look_at_from_position(p.position + side * 38.0 - p.forward() * 30.0 + Vector3(0, 14, 0), p.position + p.forward() * 20.0, Vector3.UP)
 		await _wait(4)
 		await _shot("t%d_side" % t)
+		# the biggest climb ahead (from its foot) and the biggest drop (from its top), over 200 m
+		var trk := r.track
+		var up_i := 0
+		var down_i := 0
+		for i in range(0, trk.n, 5):
+			var dy := trk.P[(i + 100) % trk.n].y - trk.P[i].y
+			if dy > trk.P[(up_i + 100) % trk.n].y - trk.P[up_i].y:
+				up_i = i
+			if dy < trk.P[(down_i + 100) % trk.n].y - trk.P[down_i].y:
+				down_i = i
+		for v: Array in [["climb", up_i, -25], ["drop", down_i, -10]]:
+			var a: int = (v[1] + v[2] + trk.n) % trk.n
+			r.camera.look_at_from_position(trk.P[a] + Vector3(0, 3.5, 0), trk.P[(v[1] + 110) % trk.n] + Vector3(0, 2.0, 0), Vector3.UP)
+			await _wait(4)
+			await _shot("t%d_hill_%s" % [t, v[0]])
+			print("AUTOTEST hill %s on track %d at %d m: %.1f m over 200 m" % [v[0], t, v[1] * Track.SPACING,
+				trk.P[(v[1] + 100) % trk.n].y - trk.P[v[1]].y])
 		# each indoor stretch: its mouth from outside, then from inside
 		for q in r.track.indoor.size():
 			var st: Dictionary = r.track.indoor[q]

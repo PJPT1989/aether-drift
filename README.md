@@ -84,6 +84,11 @@ indoor stretches of 400-800 m that bend and twist inside, each with its own ligh
 dims, the fog and colours change as you drive in and back out. World events never start
 indoors, and gusts and lightning cannot reach you there. The minimap shows indoor stretches darker.
 
+Every track climbs and falls: long climbs and drops of 10-40 m, short crests and dips, the
+steepest parts about 12%. Hit a crest fast and the car lifts off for a moment and comes back down
+a little further on. The river banks are the gentlest, the countryside and the elevated canopy
+the most up and down.
+
 Tracks 1-5 begin by driving out of a portal ring (the plane-to-plane gates of the story).
 
 ## Teams

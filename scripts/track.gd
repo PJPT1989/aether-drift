@@ -49,6 +49,7 @@ var sun: DirectionalLight3D
 var density := 1.0
 
 var _grid := {}                 # Vector2i cell -> PackedInt32Array of sample indices (every 3rd)
+var _sag := PackedFloat32Array()  # per sample: how far the road dips below a 44 m chord (hollows)
 const CELL := 40.0
 var _noise := FastNoiseLite.new()
 var _noise2 := FastNoiseLite.new()
@@ -91,6 +92,8 @@ func build(track_def: Dictionary) -> void:
 	_build_line()
 	_mark_indoor()
 	_build_grid()
+	for i in n:
+		_sag.append(maxf(0.0, (P[(i - 11 + n) % n].y + P[(i + 11) % n].y) * 0.5 - P[i].y))
 	_build_environment()
 	_build_road()
 	_build_edges()
@@ -882,7 +885,8 @@ func _base_height(x: float, z: float) -> float:
 	return h * amp
 
 
-## Ground height anywhere: noise hills, flattened to the road near it, dipped for the river.
+## Ground height anywhere: noise hills, flattened to the road near it (a little lower in hollows),
+## dipped for the river.
 func ground_y(x: float, z: float) -> float:
 	var h := _base_height(x, z)
 	if elevated:
@@ -890,7 +894,8 @@ func ground_y(x: float, z: float) -> float:
 	var nr := nearest(x, z, 130.0)
 	if nr[1] >= 0:
 		var t := smoothstep(hw + 18.0, hw + 110.0, nr[0])
-		h = lerpf(P[nr[1]].y - 0.3, h, t)
+		# lower in hollows, so the coarse terrain never shows through the road there
+		h = lerpf(P[nr[1]].y - 0.3 - _sag[nr[1]] * 1.5, h, t)
 	if _river.size() > 1:
 		var rd := _river_dist(x, z)
 		h = lerpf(-5.0, h, smoothstep(_river_w * 0.5 - 6.0, _river_w * 0.5 + 35.0, rd))

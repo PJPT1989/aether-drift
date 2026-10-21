@@ -42,7 +42,9 @@ Sister project: `PJPT1989/ashen-depths` (same tooling). The web build is publish
   "heights" keys and "indoor" stretches (`Track.INDOOR` styles, own light via `Track.update_view`).
   The layouts (11-16 km, about four minutes a lap, 3-4 curving indoor stretches each) are made by
   `python3 tools/track_gen.py --write` from each track's style and seed in its `STYLES`, which also
-  writes "heights", "indoor" and the river; edit the style, not the generated lists.
+  writes "heights" (hills from the style's "h" range, "bump" sizes and "hills" weights, kept gentle
+  where two parts of the lap run close), "indoor" and the river; edit the style, not the generated lists.
+  Cars stick to the road except over fast crests, where they lift off (`Car.air`, `Car.LIFT_G`).
   `python3 tools/track_check.py` checks a layout (length, tightest bend, clearance between parts of
   the lap, river) and draws maps without Godot. Long meshes are cut into pieces (`Track.CHUNK`) and
   scenery is batched per `Track.PROP_CELL` so far pieces are culled; props counts are per km. Cars
