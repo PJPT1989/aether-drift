@@ -329,22 +329,29 @@ func step(dt: float, racing: bool, time_now: float) -> void:
 			var t := track.T[idx]
 			var along_yaw := atan2(-t.x, -t.z)
 			yaw = lerp_angle(yaw, along_yaw, clampf(into / 40.0, 0.05, 0.4))
-	# up and down: follow the road, but over a crest that drops away faster than the car falls it
-	# lifts off and comes down a little further on
+	# up and down: follow the road, but over a crest taken fast enough that the road falls away
+	# quicker than the car would (speed squared x how sharply the road bends down) it lifts off
+	# and comes down a little further on. The road's slope and bend come from the centre line, not
+	# from frame-to-frame height changes, so scraping along a wall never bounces the car.
 	var ry := track.road_y(position, idx)
-	var y0 := position.y
-	var y := y0 + (_vy - LIFT_G * dt) * dt
-	if y <= ry or absf(ry - y0) > 3.0:
-		if air > 0.4 and _vy < -5.0 and is_player:
-			Game.play("hit", clampf(-22.0 - _vy, -16.0, -6.0), 0.55)
-		_vy = 0.0 if absf(ry - y0) > 3.0 else clampf((ry - y0) / dt, -30.0, 30.0)
-		y = ry
-	else:
+	var flat := Vector3(track.T[idx].x, 0.0, track.T[idx].z).normalized()
+	var v_along := vel.dot(flat)
+	if air > 0.0:
 		_vy -= LIFT_G * dt
-	if y - ry > 0.3 and air <= 0.3:
-		lifts += 1
-	air = y - ry
-	position.y = y
+		var y := position.y + _vy * dt
+		if y <= ry or y - ry > 30.0:
+			if air > 0.4 and _vy < -5.0 and is_player:
+				Game.play("hit", clampf(-22.0 - _vy, -16.0, -6.0), 0.55)
+			air = 0.0
+		else:
+			if y - ry > 0.3 and air <= 0.3:
+				lifts += 1
+			air = y - ry
+	if air <= 0.0:
+		_vy = track.slope_at(idx) * v_along
+		if v_along > 25.0 and v_along * v_along * track.crest_at(idx) > LIFT_G:
+			air = 0.001
+	position.y = ry + air
 	# lap counting
 	var s := track.along(position, idx)
 	var L := track.length

@@ -159,3 +159,16 @@ browser, in the frame the event was created, before the banner showed. `Hazards.
 the warmed-up materials for the whole race. Measured in headless Chromium with only one event kind
 firing (new test flag `event=KIND`): pipe burst 6 programs built before, 0 after; thopter swarm and
 river surge 0.
+
+## 11. Car twitching after wall crashes (2026-10-24)
+> after several seconds/minute, car starts to be "twitching". Not sure if related but happens a lot
+> after several crashes to track boundries.
+
+Cause: the crest lift-off from round 9 worked out the car's vertical speed from how much the road
+height changed between frames. Scraping along a wall the car's place on the centre line jumps a
+little each frame, so the road height jumped by a few centimetres, which read as a steep climb and
+threw the car 10-20 cm up again and again. Now the vertical speed comes from the road's own slope
+(`Track.slope_at`) times the speed along it, and the car only lifts off above 25 m/s where the road
+bends down sharply enough (`Track.crest_at`). Checked with a temporary test that rammed a wall every
+six seconds over 5 km of Heart of Ghirapur: many hops before, none after; the sim test still counts 5-8
+lift-offs among the eight cars on most tracks.

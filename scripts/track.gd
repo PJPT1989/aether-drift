@@ -261,6 +261,17 @@ func road_y(pos: Vector3, i: int) -> float:
 	return lerpf(P[i].y, P[j].y, f)
 
 
+## Rise per metre of the road at sample `i`.
+func slope_at(i: int) -> float:
+	var t := T[i]
+	return t.y / maxf(Vector2(t.x, t.z).length(), 0.01)
+
+
+## How sharply the road bends down at sample `i` (per metre, positive over a crest).
+func crest_at(i: int) -> float:
+	return (slope_at((i - 2 + n) % n) - slope_at((i + 2) % n)) / (4.0 * SPACING)
+
+
 func idx_at(dist: float) -> int:
 	return int(fposmod(dist, length) / length * n) % n
 
